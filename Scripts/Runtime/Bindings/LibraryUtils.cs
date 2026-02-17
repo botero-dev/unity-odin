@@ -81,6 +81,13 @@ namespace OdinInterop
                 : Marshal.GetDelegateForFunctionPointer(symbol, typeof(T)) as T;
         }
 
+#else
+
+        public static IntPtr OpenLibrary(string path) => IntPtr.Zero;
+        public static void CloseLibrary(IntPtr libraryHandle) { }
+        public static void CloseLibraryIfLoaded(string path) { }
+        public static T GetDelegate<T>(IntPtr libraryHandle, string functionName) where T : class { return null; }
+
 #endif
     }
 }
