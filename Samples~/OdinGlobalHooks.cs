@@ -8,7 +8,7 @@ using UnityEngine;
 public class OdinGlobalHooks : MonoBehaviour
 {
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
-    private static void Initialise() => DontDestroyOnLoad(new GameObject("[OdinInteropHook]", typeof(OdinGlobalHooks)));
+    private static void Initialise() => DontDestroyOnLoad(new GameObject("[OdinGlobalHooks]", typeof(OdinGlobalHooks)));
 
     private void Awake() => Global.Awake();
     private void Start() => Global.Start();
