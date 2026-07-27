@@ -1,4 +1,5 @@
 .temp/
 Scripts/Editor/.odin2cs/odin2cs
-Source/*
+Source/.exports
+Source/.imports
 Generated/*
