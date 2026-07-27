@@ -143,48 +143,6 @@ UnityOdnTropInternalFreeUsingOdnAllocator :: proc(ptr: []u8, allocator: runtime.
 }
 ";
 
-        internal const string ODIN_INTEROP_HOOK_BINDINGS_APPEND = @"
-@(private = ""file"")
-OdinInterop_Internal_OdinInteropHookBindings_OnGlobalAwake :: proc() {
-    when #defined(OnGlobalAwake) {
-        OnGlobalAwake()
-    }
-}
 
-@(private = ""file"")
-OdinInterop_Internal_OdinInteropHookBindings_OnGlobalStart :: proc() {
-    when #defined(OnGlobalStart) {
-        OnGlobalStart()
-    }
-}
-
-@(private = ""file"")
-OdinInterop_Internal_OdinInteropHookBindings_OnGlobalFixedUpdate :: proc(dt: f32) {
-    when #defined(OnGlobalFixedUpdate) {
-        OnGlobalFixedUpdate(dt)
-    }
-}
-
-@(private = ""file"")
-OdinInterop_Internal_OdinInteropHookBindings_OnGlobalUpdate :: proc(dt, unscaledDt: f32) {
-    when #defined(OnGlobalUpdate) {
-        OnGlobalUpdate(dt, unscaledDt)
-    }
-}
-
-@(private = ""file"")
-OdinInterop_Internal_OdinInteropHookBindings_OnGlobalLateUpdate :: proc(dt, unscaledDt: f32) {
-    when #defined(OnGlobalLateUpdate) {
-        OnGlobalLateUpdate(dt, unscaledDt)
-    }
-}
-
-@(private = ""file"")
-OdinInterop_Internal_OdinInteropHookBindings_OnGlobalDestroy :: proc() {
-    when #defined(OnGlobalDestroy) {
-        OnGlobalDestroy()
-    }
-}
-";
     }
 }
