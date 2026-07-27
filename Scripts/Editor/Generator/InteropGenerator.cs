@@ -17,11 +17,26 @@ namespace OdinInterop.Editor
         internal static readonly string ODIN_INTEROP_EXPORTS_DIR = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, ".exports"));
         internal static readonly string ODIN_INTEROP_IMPORTS_DIR = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, ".imports"));
 
-        private static HashSet<Type> s_ExportedTypes = new HashSet<Type>(256); // to create in odin
+        private static HashSet<Type> s_ExportedTypesFlat = new HashSet<Type>(256); // flat lookup for QualifyExportType
+        private static Dictionary<string, HashSet<Type>> s_ExportedTypesByNamespace = new Dictionary<string, HashSet<Type>>(16); // grouped by namespace→filename
+
+        private static void AddExportedType(Type t)
+        {
+            if (t == null) return;
+            s_ExportedTypesFlat.Add(t);
+            var fileKey = GetNamespaceFileName(t);
+            if (!s_ExportedTypesByNamespace.TryGetValue(fileKey, out var set))
+            {
+                set = new HashSet<Type>();
+                s_ExportedTypesByNamespace[fileKey] = set;
+            }
+            set.Add(t);
+        }
 
         internal static void GenerateInteropCode()
         {
-            s_ExportedTypes.Clear();
+            s_ExportedTypesFlat.Clear();
+            s_ExportedTypesByNamespace.Clear();
             s_HandledTypes.Clear();
 
             // create a clean odn out dir
@@ -162,25 +177,63 @@ namespace OdinInterop.Editor
                 GenerateImportOdinCode(t, attr?.odinSrcAppend ?? "");
             }
 
-            // export types
+            // export types — one file per C# namespace (sub-namespaces use underscore, e.g. UnityEngine_Audio.odin)
             {
-                s_StrBld.Clear();
-                var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, $"exported_types.odin"));
-                s_StrBld
-                    .AppendLine("// THIS IS A GENERATED FILE - DO NOT MODIFY OR YOUR CHANGES WILL BE LOST!")
-                    .AppendLine("#+vet !tabs !unused !style")
-                    .AppendLine("package exports")
-                    .AppendLine();
+                // per-namespace builders that accumulate across recursive resolution passes
+                var namespaceBuilders = new Dictionary<string, StringBuilder>();
 
-                while (s_ExportedTypes.Count > 0) // doing it recursively, the functions themselves might collect more types to export
+                while (true)
                 {
-                    var copy = s_ExportedTypes.ToArray();
-                    s_ExportedTypes.Clear();
-                    foreach (var t in copy)
-                        s_StrBld.AppendOdnTypeDef(t);
+                    var snapshot = new Dictionary<string, HashSet<Type>>(s_ExportedTypesByNamespace);
+                    s_ExportedTypesByNamespace.Clear();
+
+                    if (snapshot.Count == 0)
+                        break;
+
+                    foreach (var kvp in snapshot)
+                    {
+                        var fileKey = kvp.Key;
+                        var types = kvp.Value;
+
+                        if (types.Count == 0) continue;
+
+                        // get or create the per-namespace builder (with header)
+                        if (!namespaceBuilders.TryGetValue(fileKey, out var nsBuilder))
+                        {
+                            nsBuilder = new StringBuilder(4096);
+                            nsBuilder
+                                .AppendLine("// THIS IS A GENERATED FILE - DO NOT MODIFY OR YOUR CHANGES WILL BE LOST!")
+                                .AppendLine("#+vet !tabs !unused !style")
+                                .AppendLine("package exports")
+                                .AppendLine();
+                            namespaceBuilders[fileKey] = nsBuilder;
+                        }
+
+                        // swap in the per-namespace builder so AppendOdnTypeDef writes to it
+                        var savedStrBld = s_StrBld;
+                        s_StrBld = nsBuilder;
+                        var savedIndent = s_StrBldIndent;
+                        s_StrBldIndent = 0;
+
+                        while (types.Count > 0)
+                        {
+                            var typeCopy = types.ToArray();
+                            types.Clear();
+                            foreach (var t in typeCopy)
+                                s_StrBld.AppendOdnTypeDef(t);
+                        }
+
+                        s_StrBld = savedStrBld;
+                        s_StrBldIndent = savedIndent;
+                    }
                 }
 
-                File.WriteAllText(tgtFile, s_StrBld.ToString());
+                // write all accumulated per-namespace buffers to files
+                foreach (var kvp in namespaceBuilders)
+                {
+                    var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, $"{kvp.Key}.odin"));
+                    File.WriteAllText(tgtFile, kvp.Value.ToString());
+                }
             }
         }
 
@@ -254,12 +307,12 @@ namespace OdinInterop.Editor
             return 0;
         }
 
-        // Prefix type names that were exported by Unity (in s_ExportedTypes) with "exports."
+        // Prefix type names that were exported by Unity (in s_ExportedTypesFlat) with "exports."
         private static string QualifyExportType(string typeName, Type csharpType)
         {
             if (string.IsNullOrEmpty(typeName)) return typeName;
             if (typeName.Contains('.')) return typeName;            // already qualified (e.g. runtime.Allocator)
-            if (csharpType != null && s_ExportedTypes.Contains(csharpType))
+            if (csharpType != null && s_ExportedTypesFlat.Contains(csharpType))
                 return $"exports.{typeName}";
             return typeName;
         }
@@ -701,7 +754,7 @@ namespace OdinInterop.Editor
 
             if (typeof(UnityEngine.Object).IsAssignableFrom(t))
             {
-                s_ExportedTypes.Add(t.BaseType);
+                AddExportedType(t.BaseType);
 
                 var baseTypeResolvedName = t.BaseType.GetResolvedOdnTypeName();
                 s_HandledTypes.Add(t);
@@ -788,6 +841,14 @@ namespace OdinInterop.Editor
             // unknown
             s_HandledTypes.Add(t);
             return sb.Append($"#panic(\"{resolvedName} has not been handled correctly.\")").AppendLine();
+        }
+
+        private static string GetNamespaceFileName(Type t)
+        {
+            var ns = t.Namespace;
+            if (string.IsNullOrEmpty(ns))
+                return "global";
+            return ns.Replace('.', '_');
         }
 
         private static readonly Dictionary<Type, string> s_OdnTypeNameCache = new Dictionary<Type, string>(256);
@@ -968,7 +1029,7 @@ namespace OdinInterop.Editor
             else
             {
                 sb.Append(resolvedName);
-                s_ExportedTypes.Add(t);
+                AddExportedType(t);
             }
 
             return sb;
