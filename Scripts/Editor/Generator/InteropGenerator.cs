@@ -129,10 +129,10 @@ namespace OdinInterop.Editor
             foreach (var t in TypeCache.GetTypesWithAttribute<GenerateOdinInteropAttribute>())
             {
                 // public static partial classes only
-                if (!t.IsAbstract || !t.IsSealed)
+                if (!(t.IsAbstract && t.IsSealed))
                 {
-                    Debug.LogError($"[Odin Interop] Type {t.FullName} is marked with GenerateOdinInteropAttribute but is not a static class. Skipping...");
-                    continue;
+                    Debug.LogError($"[Odin Interop] Type {t.FullName} is marked with GenerateOdinInteropAttribute but is not a static class. Process may fail...");
+                    //continue;
                 }
 
                 var attr = t.GetCustomAttribute<GenerateOdinInteropAttribute>();
@@ -178,9 +178,18 @@ namespace OdinInterop.Editor
             var tyName = t.FullName.Replace('+', '.').Replace('.', '_');
             var cleanTyName = tyName == "OdinInterop_EngineBindings" ? "" : tyName;
             var underScoreIfCleanTyName = cleanTyName == "" ? "" : "_";
+            var className = t.Name;
+            var instName = $"_{className}";
+            
 
-            var exportedFns = t.GetMethods(BindingFlags.NonPublic | BindingFlags.Static).Where(x => !x.Name.StartsWith("odntrop_")).ToArray();
-            var importedFns = t.GetMethods(BindingFlags.Public | BindingFlags.Static).Where(x => !x.Name.StartsWith("odntrop_")).ToArray();
+            var exportedFns = t.GetMethods(BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly).Where(x => !x.Name.StartsWith("odntrop_")).ToArray();
+            var importedFns = t.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly).Where(x => !x.Name.StartsWith("odntrop_")).ToArray();
+
+            Debug.Log($"[Odin Interop] Generating bindings for {t.FullName}: {exportedFns.Length} exported functions, {importedFns.Length} imported functions");
+            foreach (var fn in exportedFns)
+                Debug.Log($"[Odin Interop]   Exported: {t.FullName} {fn.Name}");
+            foreach (var fn in importedFns)
+                Debug.Log($"[Odin Interop]   Imported: {t.FullName} {fn.Name}");
 
             {
                 var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, $"odntrop_{tyName}.odin"));
@@ -202,7 +211,12 @@ namespace OdinInterop.Editor
 
                 foreach (var importedFn in importedFns)
                 {
-                    // delegate so user can stick to the signature
+                    if (!importedFn.IsStatic)
+                    {
+                        Debug.LogWarning($"parsing nonstatic imported {tyName} {importedFn}");
+                    }
+                    
+                    // signature so user can stick to the signature
                     {
                         if (importedFn.Name.StartsWith("UnityOdnTropInternal"))
                         {
@@ -215,6 +229,11 @@ namespace OdinInterop.Editor
                         s_StrBld
                             .AppendIndent()
                             .Append($"{cleanTyName}{underScoreIfCleanTyName}{importedFn.Name}Delegate :: #type proc(");
+
+                        if (!importedFn.IsStatic) {
+                            s_StrBld.Append(instName).Append(": ").AppendOdnTypeName(t);
+                            s_StrBld.Append(", ");
+                        }
 
                         var parms = importedFn.GetParameters();
                         for (int i = 0; i < parms.Length; i++)
@@ -240,6 +259,12 @@ namespace OdinInterop.Editor
                             .AppendLine("@(export, private = \"file\")")
                             .AppendIndent()
                             .Append($"odntrop_export_{tyName}_{importedFn.Name} :: proc \"c\" (");
+
+                        if (!importedFn.IsStatic) {
+                            s_StrBld.Append(instName).Append(": ").AppendOdnTypeName(t);
+                            s_StrBld.Append(", ");
+                        }
+                        
 
                         var parms = importedFn.GetParameters();
                         for (int i = 0; i < parms.Length; i++)
@@ -269,6 +294,14 @@ namespace OdinInterop.Editor
                             .Append(importedFn.ReturnType == typeof(void) ? "" : "return ")
                             .Append($"{cleanTyName}{underScoreIfCleanTyName}{importedFn.Name}(");
 
+                        if (!importedFn.IsStatic) {
+                            s_StrBld.Append(instName);
+                            s_StrBld.Append(", ");
+
+                        }
+
+
+
                         for (int i = 0; i < parms.Length; i++)
                         {
                             var p = parms[i];
@@ -285,7 +318,13 @@ namespace OdinInterop.Editor
 
                 foreach (var exportedFn in exportedFns)
                 {
-                    // delegate
+                    if (!exportedFn.IsStatic)
+                    {
+                        Debug.LogWarning($"parsing nonstatic exported {tyName} {exportedFn}");
+                    }
+                    
+                    
+                    // signature
                     {
                         s_StrBld
                             .AppendIndent()
@@ -293,6 +332,11 @@ namespace OdinInterop.Editor
                             .AppendIndent()
                             .Append($"odntrop_del_{tyName}_{exportedFn.Name} :: #type proc \"c\" (");
 
+                        if (!exportedFn.IsStatic) {
+                            s_StrBld.Append(instName).Append(": ").AppendOdnTypeName(t);
+                            s_StrBld.Append(", ");
+                        }
+                    
                         var parms = exportedFn.GetParameters();
                         for (int i = 0; i < parms.Length; i++)
                         {
@@ -310,7 +354,7 @@ namespace OdinInterop.Editor
                         s_StrBld.AppendLine().AppendLine();
                     }
 
-                    // delegate global var
+                    // signature global var
                     {
                         s_StrBld
                             .AppendIndent()
@@ -349,6 +393,11 @@ namespace OdinInterop.Editor
                         s_StrBld
                             .AppendIndent()
                             .Append($"{cleanTyName}{underScoreIfCleanTyName}{exportedFn.Name} :: proc(");
+
+                        if (!exportedFn.IsStatic) {
+                            s_StrBld.Append(instName).Append(": ").AppendOdnTypeName(t);
+                            s_StrBld.Append(", ");
+                        }
 
                         var parms = exportedFn.GetParameters();
                         for (int i = 0; i < parms.Length; i++)
@@ -443,6 +492,11 @@ namespace OdinInterop.Editor
                         if (exportedFn.ReturnType != typeof(void))
                             s_StrBld.Append("odntrop_internal_RetValXXX = ");
                         s_StrBld.Append($"odntrop_dydel_{tyName}_{exportedFn.Name}(");
+
+                        if (!exportedFn.IsStatic) {
+                            s_StrBld.Append(instName);
+                            s_StrBld.Append(", ");
+                        }
 
                         for (int i = 0; i < parms.Length; i++)
                         {
