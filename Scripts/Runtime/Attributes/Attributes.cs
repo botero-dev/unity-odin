@@ -23,15 +23,4 @@ namespace OdinInterop
 
         public string odinSrcAppend { get; set; } = "";
     }
-
-    /// <summary>
-    /// Legacy attribute for backward compatibility. Combines both OdinExport and OdinImport behavior.
-    /// Prefer using OdinExport and OdinImport separately for clarity.
-    /// </summary>
-    public class GenerateOdinInteropAttribute : Attribute
-    {
-        public GenerateOdinInteropAttribute() { }
-
-        public string odinSrcAppend { get; set; } = "";
-    }
 }

@@ -20,8 +20,7 @@ namespace OdinInterop.Editor
         private enum InteropMode
         {
             Export,  // C# -> Odin: only process exported (non-public) methods
-            Import,  // Odin -> C#: only process imported (public static partial) methods
-            Both     // Legacy: process both
+            Import   // Odin -> C#: only process imported (public static partial) methods
         }
 
         internal static void GenerateInteropCode()
@@ -132,31 +131,17 @@ namespace OdinInterop.Editor
                 File.WriteAllText(p, s_StrBld.ToString());
             }
 
-            // collect all types with their interop modes (deduplicate)
+            // collect all types with their interop modes
             var interopTypes = new Dictionary<Type, InteropMode>();
 
-            foreach (var t in TypeCache.GetTypesWithAttribute<GenerateOdinInteropAttribute>())
-            {
-                if (!interopTypes.ContainsKey(t))
-                    interopTypes[t] = InteropMode.Both;
-                else if (interopTypes[t] != InteropMode.Both)
-                    interopTypes[t] = InteropMode.Both;
-            }
-
             foreach (var t in TypeCache.GetTypesWithAttribute<OdinExportAttribute>())
-            {
-                if (!interopTypes.ContainsKey(t))
-                    interopTypes[t] = InteropMode.Export;
-                else if (interopTypes[t] == InteropMode.Import)
-                    interopTypes[t] = InteropMode.Both;
-            }
+                interopTypes[t] = InteropMode.Export;
 
             foreach (var t in TypeCache.GetTypesWithAttribute<OdinImportAttribute>())
             {
-                if (!interopTypes.ContainsKey(t))
-                    interopTypes[t] = InteropMode.Import;
-                else if (interopTypes[t] == InteropMode.Export)
-                    interopTypes[t] = InteropMode.Both;
+                if (interopTypes.ContainsKey(t))
+                    continue; // OdinExport takes precedence if both are present
+                interopTypes[t] = InteropMode.Import;
             }
 
             // actual bindings generation
@@ -165,10 +150,9 @@ namespace OdinInterop.Editor
                 var t = kvp.Key;
                 var mode = kvp.Value;
 
-                var legacyAttr = t.GetCustomAttribute<GenerateOdinInteropAttribute>();
                 var exportAttr = t.GetCustomAttribute<OdinExportAttribute>();
                 var importAttr = t.GetCustomAttribute<OdinImportAttribute>();
-                var odinSrcAppend = legacyAttr?.odinSrcAppend ?? exportAttr?.odinSrcAppend ?? importAttr?.odinSrcAppend ?? "";
+                var odinSrcAppend = exportAttr?.odinSrcAppend ?? importAttr?.odinSrcAppend ?? "";
                 GenerateInteropCodeInternal(t, odinSrcAppend, mode);
             }
 
@@ -221,14 +205,9 @@ namespace OdinInterop.Editor
                 exportedFns = t.GetMethods(BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly).Where(x => !x.Name.StartsWith("odntrop_")).ToArray();
                 importedFns = Array.Empty<MethodInfo>();
             }
-            else if (mode == InteropMode.Import)
+            else // Import
             {
                 exportedFns = Array.Empty<MethodInfo>();
-                importedFns = t.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly).Where(x => !x.Name.StartsWith("odntrop_")).ToArray();
-            }
-            else // Both (legacy)
-            {
-                exportedFns = t.GetMethods(BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly).Where(x => !x.Name.StartsWith("odntrop_")).ToArray();
                 importedFns = t.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly).Where(x => !x.Name.StartsWith("odntrop_")).ToArray();
             }
 

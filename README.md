@@ -72,21 +72,36 @@ Very straightforward, but also maybe unnecessary. The main package comes with ba
 It contains bindings for most of the commonly used Unity APIs.
 
 - Add a dependency to `com.herohiralal.odininterop` Assembly in your Assembly Definition file.
-- Expose the functionality as a static class:
+- Expose C# functionality to Odin with `[OdinExport]`:
 
 ```csharp
 using OdinInterop;
 using UnityEngine;
 
-namespace MyNs // can be in any namespace
+namespace MyNs
 {
-    [GenerateOdinInterop]
-    public static partial class ExposeToOdin // can be internal; needs to be static and partial
+    [OdinExport]
+    internal static partial class ExposeToOdin // static partial class
     {
-        private static void ExampleFunction(int a, float b) // must be private
+        private static void ExampleFunction(int a, float b) // private → exported to Odin
         {
             Debug.Log($"Called from Odin: {a}, {b}.");
         }
+    }
+}
+```
+
+- Import Odin functions into C# with `[OdinImport]`:
+
+```csharp
+using OdinInterop;
+
+namespace MyNs
+{
+    [OdinImport]
+    internal static partial class OdinFunctions // static partial class
+    {
+        public static partial int GetSomething(string name); // public static partial → imported from Odin
     }
 }
 ```
@@ -114,14 +129,13 @@ Slightly more complex.
 
 ```csharp
 using OdinInterop;
-using UnityEngine;
 
-namespace MyNs // can be in any namespace
+namespace MyNs
 {
-    [GenerateOdinInterop]
-    public static partial class ExposeToOdin // can be internal; needs to be static and partial
+    [OdinImport]
+    internal static partial class ExposeToOdin // static partial class
     {
-        public static partial int FunctionInOdin(float x); // must be public and partial
+        public static partial int FunctionInOdin(float x); // public static partial → imported from Odin
     }
 }
 ```

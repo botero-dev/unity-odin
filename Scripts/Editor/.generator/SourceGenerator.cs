@@ -33,22 +33,13 @@ namespace OdinInterop.SourceGenerator
                     continue;
 
                 var attrs = classSymbol.GetAttributes();
-                var hasLegacy = attrs.Any(a => a.AttributeClass?.GetFullTypeName() == "OdinInterop.GenerateOdinInteropAttribute");
                 var hasExport = attrs.Any(a => a.AttributeClass?.GetFullTypeName() == "OdinInterop.OdinExportAttribute");
                 var hasImport = attrs.Any(a => a.AttributeClass?.GetFullTypeName() == "OdinInterop.OdinImportAttribute");
 
-                if (!hasLegacy && !hasExport && !hasImport)
+                if (!hasExport && !hasImport)
                     continue;
 
-                InteropMode mode;
-                if (hasExport && hasImport)
-                    mode = InteropMode.Both;
-                else if (hasExport)
-                    mode = InteropMode.Export;
-                else if (hasImport)
-                    mode = InteropMode.Import;
-                else
-                    mode = InteropMode.Both; // legacy
+                var mode = hasExport ? InteropMode.Export : InteropMode.Import;
 
                 sb.Clear();
                 GenerateInteropCode(sb, classSymbol, mode);
@@ -64,8 +55,7 @@ namespace OdinInterop.SourceGenerator
         private enum InteropMode
         {
             Export,  // C# -> Odin: only process exported methods
-            Import,  // Odin -> C#: only process imported methods
-            Both     // Legacy: process both
+            Import   // Odin -> C#: only process imported methods
         }
 
         private void GenerateInteropCode(StringBuilder sb, INamedTypeSymbol classSymbol, InteropMode mode)
@@ -95,31 +85,9 @@ namespace OdinInterop.SourceGenerator
 
                 importedMethods = new List<IMethodSymbol>();
             }
-            else if (mode == InteropMode.Import)
+            else // Import
             {
                 exportedMethods = new List<IMethodSymbol>();
-
-                importedMethods = classSymbol.GetMembers()
-                    .OfType<IMethodSymbol>()
-                    .Where(m => m.MethodKind == MethodKind.Ordinary &&
-                               m.IsPartialDefinition &&
-                               m.DeclaredAccessibility == Accessibility.Public &&
-                               !m.Name.StartsWith("odntrop_"))
-                    .ToList() ?? new List<IMethodSymbol>();
-            }
-            else // Both (legacy)
-            {
-                exportedMethods = classSymbol.GetMembers()
-                    .OfType<IMethodSymbol>()
-                    .Where(m => m.MethodKind == MethodKind.Ordinary &&
-                               !m.Name.StartsWith("odntrop_"))
-                    .ToList();
-
-                if (classSymbol.IsStatic)
-                    exportedMethods = exportedMethods.Where(m => m.DeclaredAccessibility == Accessibility.Private).ToList();
-                else
-                    exportedMethods = exportedMethods.Where(m => m.DeclaredAccessibility == Accessibility.Internal ||
-                                                                  m.DeclaredAccessibility == Accessibility.Public).ToList();
 
                 importedMethods = classSymbol.GetMembers()
                     .OfType<IMethodSymbol>()
