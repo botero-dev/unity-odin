@@ -473,41 +473,6 @@ namespace OdinInterop.Editor
                         ? foreignDecl.ReturnType
                         : (importedFn.ReturnType != typeof(void) ? importedFn.ReturnType.AppendOdnTypeNameToString() : null);
 
-                // delegate signature type for the Odin-internal implementation
-                {
-                    if (importedFn.Name.StartsWith("UnityOdnTropInternal"))
-                    {
-                        s_StrBld
-                            .AppendIndent()
-                            .AppendLine("@(private = \"file\")");
-                    }
-
-                    s_StrBld
-                        .AppendIndent()
-                        .Append($"{cleanTyName}{underScoreIfCleanTyName}{importedFn.Name}Delegate :: #type proc(");
-
-                    if (!importedFn.IsStatic)
-                    {
-                        s_StrBld.Append(instName).Append(": ").AppendOdnTypeName(t);
-                        s_StrBld.Append(", ");
-                    }
-
-                    var parms = importedFn.GetParameters();
-                    for (int i = 0; i < parms.Length; i++)
-                    {
-                        var p = parms[i];
-                        s_StrBld.Append(p.Name).Append(": ").Append(OdinParamType(i));
-                        s_StrBld.Append(", ");
-                    }
-
-                    s_StrBld.Append(")");
-                    var returnType = OdinReturnType();
-                    if (returnType != null)
-                        s_StrBld.Append(" -> ").Append(returnType);
-
-                    s_StrBld.AppendLine().AppendLine();
-                }
-
                 // exported C-callable wrapper (called by C# via DLL import)
                 {
                     var implName = foreignDecl?.OdinName

@@ -122,65 +122,65 @@ IsEnabled :: proc {
 
         internal const string ENGINE_BINDINGS_IMPORT_APPEND = @"
 @(private = ""file"")
-UnityOdnTropInternalGetMainOdnAllocator: UnityOdnTropInternalGetMainOdnAllocatorDelegate : proc() -> runtime.Allocator {
+UnityOdnTropInternalGetMainOdnAllocator :: proc() -> runtime.Allocator {
 	return UNITY_MAIN_ALLOCATOR
 }
 
 @(private = ""file"")
-UnityOdnTropInternalGetTempOdnAllocator: UnityOdnTropInternalGetTempOdnAllocatorDelegate : proc() -> runtime.Allocator {
+UnityOdnTropInternalGetTempOdnAllocator :: proc() -> runtime.Allocator {
 	return UNITY_MAIN_TEMP_ALLOCATOR
 }
 
 @(private = ""file"")
-UnityOdnTropInternalAllocateUsingOdnAllocator: UnityOdnTropInternalAllocateUsingOdnAllocatorDelegate : proc(size: i32, alignment: i32, count: i32, allocator: runtime.Allocator) -> []u8 {
+UnityOdnTropInternalAllocateUsingOdnAllocator :: proc(size: i32, alignment: i32, count: i32, allocator: runtime.Allocator) -> []u8 {
 	x, _ := runtime.mem_alloc_bytes(size = int(size * count), alignment = int(alignment), allocator = allocator)
 	return x
 }
 
 @(private = ""file"")
-UnityOdnTropInternalFreeUsingOdnAllocator: UnityOdnTropInternalFreeUsingOdnAllocatorDelegate : proc(ptr: []u8, allocator: runtime.Allocator) {
+UnityOdnTropInternalFreeUsingOdnAllocator :: proc(ptr: []u8, allocator: runtime.Allocator) {
 	runtime.mem_free_bytes(bytes = ptr, allocator = allocator)
 }
 ";
 
         internal const string ODIN_INTEROP_HOOK_BINDINGS_APPEND = @"
 @(private = ""file"")
-OdinInterop_Internal_OdinInteropHookBindings_OnGlobalAwake: OdinInterop_Internal_OdinInteropHookBindings_OnGlobalAwakeDelegate : proc() {
+OdinInterop_Internal_OdinInteropHookBindings_OnGlobalAwake :: proc() {
     when #defined(OnGlobalAwake) {
         OnGlobalAwake()
     }
 }
 
 @(private = ""file"")
-OdinInterop_Internal_OdinInteropHookBindings_OnGlobalStart: OdinInterop_Internal_OdinInteropHookBindings_OnGlobalStartDelegate : proc() {
+OdinInterop_Internal_OdinInteropHookBindings_OnGlobalStart :: proc() {
     when #defined(OnGlobalStart) {
         OnGlobalStart()
     }
 }
 
 @(private = ""file"")
-OdinInterop_Internal_OdinInteropHookBindings_OnGlobalFixedUpdate: OdinInterop_Internal_OdinInteropHookBindings_OnGlobalFixedUpdateDelegate : proc(dt: f32) {
+OdinInterop_Internal_OdinInteropHookBindings_OnGlobalFixedUpdate :: proc(dt: f32) {
     when #defined(OnGlobalFixedUpdate) {
         OnGlobalFixedUpdate(dt)
     }
 }
 
 @(private = ""file"")
-OdinInterop_Internal_OdinInteropHookBindings_OnGlobalUpdate: OdinInterop_Internal_OdinInteropHookBindings_OnGlobalUpdateDelegate : proc(dt, unscaledDt: f32) {
+OdinInterop_Internal_OdinInteropHookBindings_OnGlobalUpdate :: proc(dt, unscaledDt: f32) {
     when #defined(OnGlobalUpdate) {
         OnGlobalUpdate(dt, unscaledDt)
     }
 }
 
 @(private = ""file"")
-OdinInterop_Internal_OdinInteropHookBindings_OnGlobalLateUpdate: OdinInterop_Internal_OdinInteropHookBindings_OnGlobalLateUpdateDelegate : proc(dt, unscaledDt: f32) {
+OdinInterop_Internal_OdinInteropHookBindings_OnGlobalLateUpdate :: proc(dt, unscaledDt: f32) {
     when #defined(OnGlobalLateUpdate) {
         OnGlobalLateUpdate(dt, unscaledDt)
     }
 }
 
 @(private = ""file"")
-OdinInterop_Internal_OdinInteropHookBindings_OnGlobalDestroy: OdinInterop_Internal_OdinInteropHookBindings_OnGlobalDestroyDelegate : proc() {
+OdinInterop_Internal_OdinInteropHookBindings_OnGlobalDestroy :: proc() {
     when #defined(OnGlobalDestroy) {
         OnGlobalDestroy()
     }
