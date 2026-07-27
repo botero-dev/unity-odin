@@ -811,7 +811,7 @@ namespace OdinInterop.Editor
         private static bool RunOdinCompiler(List<string> args, Dictionary<string, string> extraEnv = null, bool isRelease = false)
         {
             args.Insert(0, "build");
-            args.Insert(1, ".");
+            args.Insert(1, "imports");
 
             args.Add("-min-link-libs");
             args.Add("-use-single-module");

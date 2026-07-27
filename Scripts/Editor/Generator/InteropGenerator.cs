@@ -14,6 +14,8 @@ namespace OdinInterop.Editor
     internal static class InteropGenerator
     {
         internal static readonly string ODIN_INTEROP_OUT_DIR = Path.GetFullPath(Path.Combine(Application.dataPath, ".odinInterop", "Source"));
+        internal static readonly string ODIN_INTEROP_EXPORTS_DIR = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, "exports"));
+        internal static readonly string ODIN_INTEROP_IMPORTS_DIR = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, "imports"));
 
         private static HashSet<Type> s_ExportedTypes = new HashSet<Type>(256); // to create in odin
 
@@ -24,25 +26,28 @@ namespace OdinInterop.Editor
 
             // create a clean odn out dir
             {
-                if (!Directory.Exists(ODIN_INTEROP_OUT_DIR))
-                {
-                    Directory.CreateDirectory(ODIN_INTEROP_OUT_DIR);
-                }
+                // ensure dirs exist
+                if (!Directory.Exists(ODIN_INTEROP_EXPORTS_DIR))
+                    Directory.CreateDirectory(ODIN_INTEROP_EXPORTS_DIR);
+                if (!Directory.Exists(ODIN_INTEROP_IMPORTS_DIR))
+                    Directory.CreateDirectory(ODIN_INTEROP_IMPORTS_DIR);
 
+                // clean old-style files from root (from before subdirectory split)
                 foreach (var file in Directory.GetFiles(ODIN_INTEROP_OUT_DIR, "export_*.odin", SearchOption.TopDirectoryOnly))
-                {
-                    if (File.Exists(file))
-                        File.Delete(file);
-                }
-
+                    File.Delete(file);
                 foreach (var file in Directory.GetFiles(ODIN_INTEROP_OUT_DIR, "import_*.odin", SearchOption.TopDirectoryOnly))
-                {
-                    if (File.Exists(file))
-                        File.Delete(file);
-                }
+                    File.Delete(file);
+                foreach (var file in Directory.GetFiles(ODIN_INTEROP_OUT_DIR, "odntrop_internal_*.odin", SearchOption.TopDirectoryOnly))
+                    File.Delete(file);
+
+                // clean new-style subdirectories
+                foreach (var file in Directory.GetFiles(ODIN_INTEROP_EXPORTS_DIR, "*.odin", SearchOption.TopDirectoryOnly))
+                    File.Delete(file);
+                foreach (var file in Directory.GetFiles(ODIN_INTEROP_IMPORTS_DIR, "*.odin", SearchOption.TopDirectoryOnly))
+                    File.Delete(file);
             }
 
-            // some hand-coded files
+            // hand-coded internal files -> exports/ (except CtxSetup -> imports/)
             {
                 var p = Path.GetFullPath("Packages/com.herohiralal.odininterop/");
                 p = Path.Combine(p, "Scripts", "Editor", "Generator", ".embedded");
@@ -51,21 +56,21 @@ namespace OdinInterop.Editor
                     var tgtFileName = Path.GetFileName(f);
                     if (tgtFileName == "stubs.odin") continue; // only for satisfying the lsp
 
-                    tgtFileName = "odntrop_internal_" + tgtFileName;
-                    var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, tgtFileName));
+                    var tgtDir = ODIN_INTEROP_EXPORTS_DIR;
+                    var tgtFile = Path.GetFullPath(Path.Combine(tgtDir, tgtFileName));
                     File.Copy(f, tgtFile, overwrite: true);
                 }
             }
 
             // export the layers and tags
             {
-                var p = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, "odntrop_internal_unity_layersandtags.odin"));
+                var p = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, "unity_layersandtags.odin"));
                 s_StrBld.Clear();
 
                 s_StrBld
                     .AppendLine("// THIS IS A GENERATED FILE - DO NOT MODIFY OR YOUR CHANGES WILL BE LOST!")
                     .AppendLine("#+vet !tabs !unused !style")
-                    .AppendLine("package src")
+                    .AppendLine("package exports")
                     .AppendLine();
 
                 s_StrBld
@@ -162,11 +167,11 @@ namespace OdinInterop.Editor
             // export types
             {
                 s_StrBld.Clear();
-                var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, $"odntrop_internal_exportedtypes.odin"));
+                var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, $"exported_types.odin"));
                 s_StrBld
                     .AppendLine("// THIS IS A GENERATED FILE - DO NOT MODIFY OR YOUR CHANGES WILL BE LOST!")
                     .AppendLine("#+vet !tabs !unused !style")
-                    .AppendLine("package src")
+                    .AppendLine("package exports")
                     .AppendLine();
 
                 while (s_ExportedTypes.Count > 0) // doing it recursively, the functions themselves might collect more types to export
@@ -251,6 +256,16 @@ namespace OdinInterop.Editor
             return 0;
         }
 
+        // Prefix type names that were exported by Unity (in s_ExportedTypes) with "exports."
+        private static string QualifyExportType(string typeName, Type csharpType)
+        {
+            if (string.IsNullOrEmpty(typeName)) return typeName;
+            if (typeName.Contains('.')) return typeName;            // already qualified (e.g. runtime.Allocator)
+            if (csharpType != null && s_ExportedTypes.Contains(csharpType))
+                return $"exports.{typeName}";
+            return typeName;
+        }
+
         private static void GenerateExportOdinCode(Type t, string odinSrcAppend)
         {
             var tyName = t.FullName.Replace('+', '.').Replace('.', '_');
@@ -268,13 +283,13 @@ namespace OdinInterop.Editor
 
             Debug.Log($"[Odin Interop] Generating export bindings for {t.FullName}: {exportedFns.Length} exported functions");
 
-            var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, $"export_{tyName}_impl.odin"));
+            var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, $"export_{tyName}_impl.odin"));
 
             s_StrBld
                 .Clear()
                 .AppendLine("// THIS IS A GENERATED FILE - DO NOT MODIFY OR YOUR CHANGES WILL BE LOST!")
                 .AppendLine("#+vet !tabs !unused !style")
-                .AppendLine("package src")
+                .AppendLine("package exports")
                 .AppendLine()
                 .AppendLine("@require import \"base:runtime\"")
                 .AppendLine();
@@ -478,12 +493,12 @@ namespace OdinInterop.Editor
 
             // Generate decl file — forwarding wrappers to _impl
             {
-                var declFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, $"export_{tyName}.odin"));
+                var declFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, $"export_{tyName}.odin"));
                 s_StrBld
                     .Clear()
                     .AppendLine("// THIS IS A GENERATED FILE - DO NOT MODIFY OR YOUR CHANGES WILL BE LOST!")
                     .AppendLine("#+vet !tabs !unused !style")
-                    .AppendLine("package src")
+                    .AppendLine("package exports")
                     .AppendLine()
                     .AppendLine("@require import \"base:runtime\"")
                     .AppendLine();
@@ -569,14 +584,16 @@ namespace OdinInterop.Editor
 
             Debug.Log($"[Odin Interop] Generating import bindings for {t.FullName}: {importedFns.Length} imported functions");
 
-            var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, $"import_{tyName}.odin"));
+            var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_IMPORTS_DIR, $"import_{tyName}.odin"));
 
             s_StrBld
                 .Clear()
                 .AppendLine("// THIS IS A GENERATED FILE - DO NOT MODIFY OR YOUR CHANGES WILL BE LOST!")
                 .AppendLine("#+vet !tabs !unused !style")
-                .AppendLine("package src")
+                .AppendLine("package imports")
                 .AppendLine()
+                .AppendLine("import src \"..\"")
+                .AppendLine("import \"../exports\"")
                 .AppendLine("@require import \"base:runtime\"")
                 .AppendLine();
 
@@ -590,14 +607,16 @@ namespace OdinInterop.Editor
 
                 // Resolve Odin type name for a param or return, preferring original Odin type
                 string OdinParamType(int i) =>
-                    foreignDecl?.ParamTypes != null && i < foreignDecl.ParamTypes.Length
+                    QualifyExportType(foreignDecl?.ParamTypes != null && i < foreignDecl.ParamTypes.Length
                         ? foreignDecl.ParamTypes[i]
-                        : importedFn.GetParameters()[i].ParameterType.AppendOdnTypeNameToString();
+                        : importedFn.GetParameters()[i].ParameterType.AppendOdnTypeNameToString(),
+                        importedFn.GetParameters()[i].ParameterType);
 
                 string OdinReturnType() =>
-                    !string.IsNullOrEmpty(foreignDecl?.ReturnType)
+                    QualifyExportType(!string.IsNullOrEmpty(foreignDecl?.ReturnType)
                         ? foreignDecl.ReturnType
-                        : (importedFn.ReturnType != typeof(void) ? importedFn.ReturnType.AppendOdnTypeNameToString() : null);
+                        : (importedFn.ReturnType != typeof(void) ? importedFn.ReturnType.AppendOdnTypeNameToString() : null),
+                        importedFn.ReturnType != typeof(void) ? importedFn.ReturnType : null);
 
                 // exported C-callable wrapper (called by C# via DLL import)
                 {
@@ -634,13 +653,14 @@ namespace OdinInterop.Editor
                     s_StrBldIndent++;
                     s_StrBld
                         .AppendIndent()
-                        .AppendLine("context = CreateUnityContext() if G_OdnTrop_Internal_CtxNesting == 0 else G_OdnTrop_Internal_Ctx")
+                        .AppendLine("context = exports.CreateUnityContext() if exports.G_OdnTrop_Internal_CtxNesting == 0 else exports.G_OdnTrop_Internal_Ctx")
                         .AppendIndent()
-                        .AppendLine("G_OdnTrop_Internal_CtxNesting += 1")
+                        .AppendLine("exports.G_OdnTrop_Internal_CtxNesting += 1")
                         .AppendIndent()
-                        .AppendLine("defer G_OdnTrop_Internal_CtxNesting -= 1")
+                        .AppendLine("defer exports.G_OdnTrop_Internal_CtxNesting -= 1")
                         .AppendIndent()
                         .Append(importedFn.ReturnType == typeof(void) ? "" : "return ")
+                        .Append(string.IsNullOrWhiteSpace(odinSrcAppend) ? "src." : "")
                         .Append(implName)
                         .Append("(");
 

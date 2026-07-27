@@ -6,7 +6,7 @@ there's a bunch of files there that have the actual implementations of these fun
 with the same signatures, with real implementations
 */
 
-package src
+package exports
 
 import "base:runtime"
 

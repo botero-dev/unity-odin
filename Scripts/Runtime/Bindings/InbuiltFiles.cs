@@ -123,12 +123,12 @@ IsEnabled :: proc {
         internal const string ENGINE_BINDINGS_IMPORT_APPEND = @"
 @(private = ""file"")
 UnityOdnTropInternalGetMainOdnAllocator :: proc() -> runtime.Allocator {
-	return UNITY_MAIN_ALLOCATOR
+	return exports.UNITY_MAIN_ALLOCATOR
 }
 
 @(private = ""file"")
 UnityOdnTropInternalGetTempOdnAllocator :: proc() -> runtime.Allocator {
-	return UNITY_MAIN_TEMP_ALLOCATOR
+	return exports.UNITY_MAIN_TEMP_ALLOCATOR
 }
 
 @(private = ""file"")

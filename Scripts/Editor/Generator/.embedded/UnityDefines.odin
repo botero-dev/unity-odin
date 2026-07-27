@@ -1,4 +1,4 @@
-package src
+package exports
 
 UNITY_EDITOR :: #config(UNITY_EDITOR, false)
 UNITY_EDITOR_WIN :: #config(UNITY_EDITOR_WIN, false)

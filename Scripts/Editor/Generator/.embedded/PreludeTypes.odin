@@ -1,4 +1,4 @@
-package src
+package exports
 
 Color32 :: struct {
 	rgba: i32,

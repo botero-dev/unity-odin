@@ -1,4 +1,4 @@
-package src
+package exports
 
 import "base:runtime"
 import "core:strings"
