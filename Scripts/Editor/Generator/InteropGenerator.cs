@@ -193,6 +193,64 @@ namespace OdinInterop.Editor
             return sb;
         }
 
+        private static Dictionary<Type, string> s_SourcePathCache = new Dictionary<Type, string>();
+
+        private static string GetCSharpSourcePath(Type t)
+        {
+            if (s_SourcePathCache.TryGetValue(t, out var cached))
+                return cached;
+
+            var className = t.Name;
+            var projectRoot = Path.GetDirectoryName(Application.dataPath);
+            var searchDirs = new[] { Application.dataPath, Path.Combine(projectRoot, "Packages") };
+
+            foreach (var searchDir in searchDirs)
+            {
+                if (!Directory.Exists(searchDir)) continue;
+                var files = Directory.GetFiles(searchDir, "*.cs", SearchOption.AllDirectories);
+                foreach (var file in files)
+                {
+                    var content = File.ReadAllText(file);
+                    if (content.Contains($"class {className}") || content.Contains($"struct {className}"))
+                    {
+                        var absolutePath = Path.GetFullPath(file).Replace('\\', '/');
+                        s_SourcePathCache[t] = absolutePath;
+                        return absolutePath;
+                    }
+                }
+            }
+
+            s_SourcePathCache[t] = null;
+            return null;
+        }
+
+        private static Dictionary<string, int> s_MethodLinesCache = new Dictionary<string, int>();
+
+        private static int GetMethodLineNumber(string sourcePath, string methodName)
+        {
+            if (string.IsNullOrEmpty(sourcePath))
+                return 0;
+
+            var key = $"{sourcePath}::{methodName}";
+            if (s_MethodLinesCache.TryGetValue(key, out var cached))
+                return cached;
+
+            var lines = File.ReadAllLines(sourcePath);
+            for (int i = 0; i < lines.Length; i++)
+            {
+                var trimmed = lines[i].TrimStart();
+                if (trimmed.Contains($" {methodName}(") || trimmed.Contains($" {methodName}<"))
+                {
+                    var lineNumber = i + 1;
+                    s_MethodLinesCache[key] = lineNumber;
+                    return lineNumber;
+                }
+            }
+
+            s_MethodLinesCache[key] = 0;
+            return 0;
+        }
+
         private static void GenerateExportOdinCode(Type t, string odinSrcAppend)
         {
             var tyName = t.FullName.Replace('+', '.').Replace('.', '_');
@@ -430,8 +488,16 @@ namespace OdinInterop.Editor
                     .AppendLine("@require import \"base:runtime\"")
                     .AppendLine();
 
+                var declSrcPath = GetCSharpSourcePath(t);
+                if (declSrcPath != null)
+                    s_StrBld.AppendLine($"// Source: file://{declSrcPath}").AppendLine();
+
                 foreach (var exportedFn in exportedFns)
                 {
+                    var declFnLine = GetMethodLineNumber(declSrcPath, exportedFn.Name);
+                    if (declFnLine > 0)
+                        s_StrBld.AppendIndent().AppendLine($"// Source: file://{declSrcPath}#L{declFnLine}");
+
                     var parms = exportedFn.GetParameters();
 
                     s_StrBld
