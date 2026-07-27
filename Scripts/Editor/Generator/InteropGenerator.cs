@@ -13,7 +13,7 @@ namespace OdinInterop.Editor
 {
     internal static class InteropGenerator
     {
-        internal static readonly string ODIN_INTEROP_OUT_DIR = Path.GetFullPath(Path.Combine(Application.dataPath, ".odinInterop", "Source"));
+        internal static readonly string ODIN_INTEROP_OUT_DIR = Path.GetFullPath(Path.Combine(Application.dataPath, "_odinInterop", "Source"));
         internal static readonly string ODIN_INTEROP_EXPORTS_DIR = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, "exports"));
         internal static readonly string ODIN_INTEROP_IMPORTS_DIR = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, "imports"));
 
