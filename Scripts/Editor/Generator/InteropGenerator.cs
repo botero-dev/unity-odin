@@ -13,9 +13,9 @@ namespace OdinInterop.Editor
 {
     internal static class InteropGenerator
     {
-        internal static readonly string ODIN_INTEROP_OUT_DIR = Path.GetFullPath(Path.Combine(Application.dataPath, "_odinInterop", "Source"));
-        internal static readonly string ODIN_INTEROP_EXPORTS_DIR = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, "exports"));
-        internal static readonly string ODIN_INTEROP_IMPORTS_DIR = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, "imports"));
+        internal static readonly string ODIN_INTEROP_OUT_DIR = Path.GetFullPath(Path.Combine(Application.dataPath, "UnityOdin", "Source"));
+        internal static readonly string ODIN_INTEROP_EXPORTS_DIR = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, ".exports"));
+        internal static readonly string ODIN_INTEROP_IMPORTS_DIR = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, ".imports"));
 
         private static HashSet<Type> s_ExportedTypes = new HashSet<Type>(256); // to create in odin
 
@@ -49,8 +49,7 @@ namespace OdinInterop.Editor
 
             // hand-coded internal files -> exports/
             {
-                var p = Path.GetFullPath("Packages/com.herohiralal.odininterop/");
-                p = Path.Combine(p, "Scripts", "Editor", "Generator", ".embedded");
+                var p = Path.GetFullPath(Path.Combine(Application.dataPath, "UnityOdin", "Scripts", "Editor", "Generator", ".embedded"));
                 foreach (var f in Directory.GetFiles(p, "*.odin", SearchOption.TopDirectoryOnly))
                 {
                     var tgtFileName = Path.GetFileName(f);
@@ -279,8 +278,6 @@ namespace OdinInterop.Editor
 
             if (exportedFns.Length == 0)
                 return;
-
-            Debug.Log($"[Odin Interop] Generating export bindings for {t.FullName}: {exportedFns.Length} exported functions");
 
             var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, $"export_{tyName}_impl.odin"));
 
@@ -581,8 +578,6 @@ namespace OdinInterop.Editor
             if (importedFns.Length == 0)
                 return;
 
-            Debug.Log($"[Odin Interop] Generating import bindings for {t.FullName}: {importedFns.Length} imported functions");
-
             var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_IMPORTS_DIR, $"import_{tyName}.odin"));
 
             s_StrBld
@@ -592,7 +587,7 @@ namespace OdinInterop.Editor
                 .AppendLine("package imports")
                 .AppendLine()
                 .AppendLine("import src \"..\"")
-                .AppendLine("import \"../exports\"")
+                .AppendLine("import exports \"../.exports\"")
                 .AppendLine("@require import \"base:runtime\"")
                 .AppendLine();
 

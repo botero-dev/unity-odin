@@ -1,6 +1,6 @@
 package exports
 
-import unity "../exports"
+import unity "../.exports"
 
 import "base:runtime"
 

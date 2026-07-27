@@ -2,8 +2,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ODIN_INTEROP_SOURCE="${ODIN_INTEROP_SOURCE:-$SCRIPT_DIR/../../../../../Assets/Odin}"
-OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/../../../../../Assets/Odin/Generated}"
+ODIN_INTEROP_SOURCE="${ODIN_INTEROP_SOURCE:-$SCRIPT_DIR/../../Source}"
+OUTPUT_DIR="${OUTPUT_DIR:-$SCRIPT_DIR/../../Generated}"
 
 # Resolve to absolute paths
 ODIN_INTEROP_SOURCE="$(cd "$ODIN_INTEROP_SOURCE" && pwd)"

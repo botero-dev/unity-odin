@@ -8,19 +8,19 @@ using Debug = UnityEngine.Debug;
 namespace OdinInterop.Editor
 {
     /// <summary>
-    /// Watches .odin files in _odinInterop/Source/ (root only, not subdirectories
-    /// such as exports/ or imports/) and runs odin2cs to regenerate C# bindings
+    /// Watches .odin files in UnityOdin/Source/ (root only, not subdirectories
+    /// such as .exports/ or .imports/) and runs odin2cs to regenerate C# bindings
     /// on change. Only .odin files placed directly in the root of the Source
     /// directory are processed — generated files in subdirectories are ignored.
     /// </summary>
     internal class Odin2CsWatcher : AssetPostprocessor
     {
-        private static readonly string ODIN_SOURCE_DIR = Path.GetFullPath(Path.Combine(Application.dataPath, "_odinInterop", "Source"));
+        private static readonly string ODIN_SOURCE_DIR = Path.GetFullPath(Path.Combine(Application.dataPath, "UnityOdin", "Source"));
         private static readonly string ODIN2CS_DIR = Path.GetFullPath(Path.Combine(
-            Application.dataPath, "..", "Packages", "com.herohiralal.odininterop",
+            Application.dataPath, "UnityOdin",
             "Scripts", "Editor", ".odin2cs"));
         private static readonly string ODIN2CS_PATH = Path.Combine(ODIN2CS_DIR, "odin2cs");
-        private static readonly string ODIN2CS_OUTPUT = Path.GetFullPath(Path.Combine(Application.dataPath, "Odin", "Generated"));
+        private static readonly string ODIN2CS_OUTPUT = Path.GetFullPath(Path.Combine(Application.dataPath, "UnityOdin", "Generated"));
 
         private static void OnPostprocessAllAssets(
             string[] importedAssets,

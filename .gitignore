@@ -1,2 +1,4 @@
 .temp/
 Scripts/Editor/.odin2cs/odin2cs
+Source/*
+Generated/*

@@ -1,5 +1,5 @@
 {
-    "name": "com.herohiralal.odininterop",
+    "name": "UnityOdin",
     "rootNamespace": "OdinInterop",
     "references": [],
     "includePlatforms": [],

@@ -1,1 +1,1 @@
-[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("com.herohiralal.odininterop.editor")]
+[assembly: System.Runtime.CompilerServices.InternalsVisibleTo("UnityOdin.Editor")]
