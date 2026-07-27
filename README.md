@@ -18,19 +18,16 @@ I changed some of the repo structure from original authors, and did a lot of cha
 
 ## How To Use
 
-Download project and place in your Assets folder. I just don't want to understand better
-whatever Unity's package management system does.
+Download project and place in your Assets folder as a folder named `Assets/UnityOdin`.
 
-Place your source code on Assets/OdinLanguage/Sources. 
+Place your source code on Assets/UnityOdin/Sources. 
 
-Bindings for odin code are automatically generated from the files in Assets/OdinLanguage/Source. 
+Bindings for Odin code are automatically generated from the files in `Assets/UnityOdin/Source`. 
 These bindings create classes and glue code to bind and hot reload.
 
 Bindings to call C# code from Odin are automatically generated from MonoBehaviours that use `[OdinExport]` attribute
 
-A ready-to-use sample that forwards Unity lifecycle callbacks (Awake, Start, Update, etc.) to Odin is available in the samples folder.
-
-See [Samples](./Samples~/README.md) to see how its set up
+A ready-to-use sample that forwards Unity lifecycle callbacks (Awake, Start, Update, etc.) to Odin is available in the `Samples~` folder.
 
 
 ### Supported Interop Types

@@ -1,34 +1,39 @@
-// Place this file in Assets/Odin/ (the root, not in exports/ or imports/).
-//
-// Changes to files in Odin source folder are monitored by Unity Asset Watcher
+// Place this file in Assets/UnityOdin/Source
+// Changes to files in UnityOdin/Source folder are monitored by Unity asset watcher.
 
 package src
 
-import "core:fmt"
+import "core:log"
 
-OnGlobalAwake :: proc() {
-    fmt.println("[Odin] Awake!")
+import unity ".exports"
+
+global_awake :: proc() {
+    app_name := unity.GetApplicationProductName(context.allocator)
+    log.info("[Odin] Awake! ", app_name)
 }
 
-OnGlobalStart :: proc() {
-    fmt.println("[Odin] Start!")
+global_start :: proc() {
+    log.info("[Odin] Start!")
 }
 
-OnGlobalFixedUpdate :: proc(dt: f32) {
+global_fixed_update :: proc(dt: f32) {
     // Called every physics tick — uncomment for per-frame logic:
-    // fmt.printf("[Odin] FixedUpdate dt=%f\n", dt)
+    // log.info("[Odin] FixedUpdate dt=%f\n", dt)
 }
 
-OnGlobalUpdate :: proc(dt, unscaled: f32) {
+global_update :: proc(dt, unscaled: f32) {
     // Called every frame — uncomment for per-frame logic:
-    // fmt.printf("[Odin] Update dt=%f, unscaled=%f\n", dt, unscaled)
+    // log.info("[Odin] Update dt=%f, unscaled=%f\n", dt, unscaled)
 }
 
-OnGlobalLateUpdate :: proc(dt, unscaled: f32) {
+
+global_lateUpdate :: proc(dt, unscaled: f32) {
     // Called after all Update calls — uncomment for per-frame logic:
-    // fmt.printf("[Odin] LateUpdate dt=%f, unscaled=%f\n", dt, unscaled)
+    // log.info("[Odin] LateUpdate dt=%f, unscaled=%f\n", dt, unscaled)
 }
 
-OnGlobalDestroy :: proc() {
-    fmt.println("[Odin] Destroy!")
+global_destroy :: proc() {
+    log.info("[Odin] Destroy!")
 }
+
+

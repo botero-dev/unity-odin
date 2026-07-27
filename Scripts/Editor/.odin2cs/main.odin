@@ -206,15 +206,20 @@ process_value_decl :: proc(vd: ^ast.Value_Decl, procs: ^[dynamic]ProcInfo, sourc
 
 	// Extract params
 	if proc_type.params != nil {
-		info.params = make([]ParamInfo, len(proc_type.params.list))
-		for f, i in proc_type.params.list {
-			param_name := extract_param_name(f)
+		params: [dynamic]ParamInfo
+		for f in proc_type.params.list {
 			param_type := extract_type_string(f.type)
-			info.params[i] = ParamInfo{
-				name = strings.clone(param_name),
-				type = strings.clone(param_type),
+			for name_expr in f.names {
+				#partial switch id in name_expr.derived_expr {
+				case ^ast.Ident:
+					append(&params, ParamInfo{
+						name = strings.clone(id.name),
+						type = strings.clone(param_type),
+					})
+				}
 			}
 		}
+		info.params = params[:]
 	}
 
 	append(procs, info)
