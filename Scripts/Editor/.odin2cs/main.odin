@@ -108,8 +108,8 @@ main :: proc() {
 		}
 
 		// Generate C# file with multiple classes
-		cs_code := generate_csharp_file(file_class_name, class_names, class_methods)
-		output_path := fmt.tprintf("%s/%s.g.cs", output_dir, file_class_name)
+		cs_code := generate_csharp_file(base_name, class_names, class_methods)
+		output_path := fmt.tprintf("%s/%s.g.cs", output_dir, base_name)
 		err := os.write_entire_file(output_path, transmute([]byte)cs_code)
 		if err == nil {
 			fmt.printf("  Generated: %s (%d methods in %d classes)\n", output_path, len(file_procs), len(class_names))

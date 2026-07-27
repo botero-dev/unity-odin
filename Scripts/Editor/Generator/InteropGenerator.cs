@@ -332,7 +332,7 @@ namespace OdinInterop.Editor
             if (exportedFns.Length == 0)
                 return;
 
-            var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, $"export_{tyName}_impl.odin"));
+            var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, $"{tyName}_impl.odin"));
 
             s_StrBld
                 .Clear()
@@ -542,7 +542,7 @@ namespace OdinInterop.Editor
 
             // Generate decl file — forwarding wrappers to _impl
             {
-                var declFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, $"export_{tyName}.odin"));
+                var declFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, $"{tyName}.odin"));
                 s_StrBld
                     .Clear()
                     .AppendLine("// THIS IS A GENERATED FILE - DO NOT MODIFY OR YOUR CHANGES WILL BE LOST!")
@@ -631,7 +631,11 @@ namespace OdinInterop.Editor
             if (importedFns.Length == 0)
                 return;
 
-            var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_IMPORTS_DIR, $"import_{tyName}.odin"));
+            var importSrcPath = GetCSharpSourcePath(t);
+            var importOdinFileName = importSrcPath != null
+                ? Path.GetFileNameWithoutExtension(importSrcPath)
+                : tyName;
+            var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_IMPORTS_DIR, $"{importOdinFileName}.odin"));
 
             s_StrBld
                 .Clear()
@@ -643,6 +647,9 @@ namespace OdinInterop.Editor
                 .AppendLine("import exports \"../.exports\"")
                 .AppendLine("@require import \"base:runtime\"")
                 .AppendLine();
+
+            if (importSrcPath != null)
+                s_StrBld.AppendLine($"// Source: file://{importSrcPath}").AppendLine();
 
             foreach (var importedFn in importedFns)
             {

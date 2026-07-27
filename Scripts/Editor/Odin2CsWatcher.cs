@@ -61,7 +61,7 @@ namespace OdinInterop.Editor
             return !relative.Contains("/");
         }
 
-        private static void RunOdin2Cs()
+        internal static void RunOdin2Cs()
         {
             if (!File.Exists(ODIN2CS_PATH))
             {
