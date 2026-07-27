@@ -27,7 +27,7 @@ namespace OdinInterop
 
         public Slice(int length, Allocator allocator)
         {
-            var s = EngineBindings.UnityOdnTropInternalAllocateUsingOdnAllocator(sizeof(T), UnsafeUtility.AlignOf<T>(), length, allocator);
+            var s = EngineBindingsImports.UnityOdnTropInternalAllocateUsingOdnAllocator(sizeof(T), UnsafeUtility.AlignOf<T>(), length, allocator);
             this = s.Reinterpret<T>();
         }
 
@@ -64,9 +64,9 @@ namespace OdinInterop
             return slice;
         }
 
-        public void Dispose() => Dispose(EngineBindings.UnityOdnTropInternalGetMainOdnAllocator());
+        public void Dispose() => Dispose(EngineBindingsImports.UnityOdnTropInternalGetMainOdnAllocator());
 
-        public void Dispose(Allocator allocator) => EngineBindings.UnityOdnTropInternalFreeUsingOdnAllocator(Reinterpret<byte>(), allocator);
+        public void Dispose(Allocator allocator) => EngineBindingsImports.UnityOdnTropInternalFreeUsingOdnAllocator(Reinterpret<byte>(), allocator);
     }
 
     public unsafe struct RawSlice // type-unknown slice
@@ -105,7 +105,7 @@ namespace OdinInterop
             }
 
             var b = System.Text.Encoding.UTF8.GetBytes(str);
-            var s = EngineBindings.UnityOdnTropInternalAllocateUsingOdnAllocator(1, 1, b.Length, allocator);
+            var s = EngineBindingsImports.UnityOdnTropInternalAllocateUsingOdnAllocator(1, 1, b.Length, allocator);
             if (s.ptr == null)
             {
                 this = default;
@@ -161,7 +161,7 @@ namespace OdinInterop
                 return;
             }
 
-            var s2 = EngineBindings.UnityOdnTropInternalAllocateUsingOdnAllocator(2, 2, str.Length, allocator);
+            var s2 = EngineBindingsImports.UnityOdnTropInternalAllocateUsingOdnAllocator(2, 2, str.Length, allocator);
             if (s2.ptr == null)
             {
                 this = default;
@@ -203,7 +203,7 @@ namespace OdinInterop
 
         public DynamicArray(int capacity, Allocator allocator)
         {
-            var s = EngineBindings.UnityOdnTropInternalAllocateUsingOdnAllocator(sizeof(T), UnsafeUtility.AlignOf<T>(), capacity, allocator);
+            var s = EngineBindingsImports.UnityOdnTropInternalAllocateUsingOdnAllocator(sizeof(T), UnsafeUtility.AlignOf<T>(), capacity, allocator);
             var s2 = s.Reinterpret<T>();
             ptr = s2.ptr;
             len = IntPtr.Zero;
@@ -213,7 +213,7 @@ namespace OdinInterop
 
         public DynamicArray(List<T> list, Allocator allocator)
         {
-            var s = EngineBindings.UnityOdnTropInternalAllocateUsingOdnAllocator(sizeof(T), UnsafeUtility.AlignOf<T>(), list.Capacity, allocator);
+            var s = EngineBindingsImports.UnityOdnTropInternalAllocateUsingOdnAllocator(sizeof(T), UnsafeUtility.AlignOf<T>(), list.Capacity, allocator);
             if (s.ptr == null)
             {
                 this = default;

@@ -2,7 +2,7 @@ using UnityEngine;
 
 namespace OdinInterop.Internal
 {
-    [GenerateOdinInterop(odinSrcAppend = InteropGeneratorInbuiltFiles.ODIN_INTEROP_HOOK_BINDINGS_APPEND)]
+    [OdinImport(odinSrcAppend = InteropGeneratorInbuiltFiles.ODIN_INTEROP_HOOK_BINDINGS_APPEND)]
     internal static partial class OdinInteropHookBindings
     {
         public static partial void OnGlobalAwake();

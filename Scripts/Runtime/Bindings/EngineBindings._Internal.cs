@@ -6,7 +6,10 @@ using UnityAllocator = Unity.Collections.Allocator;
 
 namespace OdinInterop
 {
-    [GenerateOdinInterop(odinSrcAppend = InteropGeneratorInbuiltFiles.ENGINE_BINDINGS_APPEND)]
+    /// <summary>
+    /// C# functions exported to Odin (called by Odin).
+    /// </summary>
+    [OdinExport(odinSrcAppend = InteropGeneratorInbuiltFiles.ENGINE_BINDINGS_EXPORT_APPEND)]
     internal static unsafe partial class EngineBindings
     {
 
@@ -47,9 +50,14 @@ namespace OdinInterop
         private static void UnityOdnTropInternalRandomSetState(Random.State state) => Random.state = state;
 
         private static int UnityOdnTropInternalRandomGetNextInt() => Random.Range(int.MinValue, int.MaxValue);
+    }
 
-        // allocator functionality imports
-
+    /// <summary>
+    /// Odin functions exposed to C# (imported from Odin).
+    /// </summary>
+    [OdinImport(odinSrcAppend = InteropGeneratorInbuiltFiles.ENGINE_BINDINGS_IMPORT_APPEND)]
+    internal static unsafe partial class EngineBindingsImports
+    {
         public static partial Allocator UnityOdnTropInternalGetMainOdnAllocator();
         public static partial Allocator UnityOdnTropInternalGetTempOdnAllocator();
         public static partial Slice<byte> UnityOdnTropInternalAllocateUsingOdnAllocator(int tySize, int tyAlignment, int tyCount, Allocator allocator);

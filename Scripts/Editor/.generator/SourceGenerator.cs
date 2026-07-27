@@ -29,12 +29,29 @@ namespace OdinInterop.SourceGenerator
                 var model = compilation.GetSemanticModel(classDeclaration.SyntaxTree);
                 var classSymbol = model.GetDeclaredSymbol(classDeclaration);
 
-                if (classSymbol == null ||
-                    !classSymbol.GetAttributes().Any(a => a.AttributeClass?.GetFullTypeName() == "OdinInterop.GenerateOdinInteropAttribute"))
+                if (classSymbol == null)
                     continue;
 
+                var attrs = classSymbol.GetAttributes();
+                var hasLegacy = attrs.Any(a => a.AttributeClass?.GetFullTypeName() == "OdinInterop.GenerateOdinInteropAttribute");
+                var hasExport = attrs.Any(a => a.AttributeClass?.GetFullTypeName() == "OdinInterop.OdinExportAttribute");
+                var hasImport = attrs.Any(a => a.AttributeClass?.GetFullTypeName() == "OdinInterop.OdinImportAttribute");
+
+                if (!hasLegacy && !hasExport && !hasImport)
+                    continue;
+
+                InteropMode mode;
+                if (hasExport && hasImport)
+                    mode = InteropMode.Both;
+                else if (hasExport)
+                    mode = InteropMode.Export;
+                else if (hasImport)
+                    mode = InteropMode.Import;
+                else
+                    mode = InteropMode.Both; // legacy
+
                 sb.Clear();
-                GenerateInteropCode(sb, classSymbol);
+                GenerateInteropCode(sb, classSymbol, mode);
                 if (sb.Length != 0)
                 {
                     var fileName = $"{classSymbol.GetFullTypeName().Replace('.', '_')}.g.cs";
@@ -44,7 +61,14 @@ namespace OdinInterop.SourceGenerator
             }
         }
 
-        private void GenerateInteropCode(StringBuilder sb, INamedTypeSymbol classSymbol)
+        private enum InteropMode
+        {
+            Export,  // C# -> Odin: only process exported methods
+            Import,  // Odin -> C#: only process imported methods
+            Both     // Legacy: process both
+        }
+
+        private void GenerateInteropCode(StringBuilder sb, INamedTypeSymbol classSymbol, InteropMode mode)
         {
             var sbIndent = 0;
 
@@ -52,31 +76,59 @@ namespace OdinInterop.SourceGenerator
             var instTypeName = classSymbol.Name;
             var instParamName = $"_{instTypeName}";
 
-            var exportedMethods = classSymbol.GetMembers()
-                .OfType<IMethodSymbol>()
-                .Where(m => m.MethodKind == MethodKind.Ordinary &&
-                           !m.Name.StartsWith("odntrop_"))
-                .ToList();
+            List<IMethodSymbol> exportedMethods;
+            List<IMethodSymbol> importedMethods;
 
-            // For static classes (partial extension), private members are accessible.
-            // For non-static classes (separate generated class), only internal/public.
-            if (classSymbol.IsStatic)
+            if (mode == InteropMode.Export)
             {
-                exportedMethods = exportedMethods.Where(m => m.DeclaredAccessibility == Accessibility.Private).ToList();
-            }
-            else
-            {
-                exportedMethods = exportedMethods.Where(m => m.DeclaredAccessibility == Accessibility.Internal ||
-                                                              m.DeclaredAccessibility == Accessibility.Public).ToList();
-            }
+                exportedMethods = classSymbol.GetMembers()
+                    .OfType<IMethodSymbol>()
+                    .Where(m => m.MethodKind == MethodKind.Ordinary &&
+                               !m.Name.StartsWith("odntrop_"))
+                    .ToList();
 
-            var importedMethods = classSymbol.GetMembers()
-                .OfType<IMethodSymbol>()
-                .Where(m => m.MethodKind == MethodKind.Ordinary &&
-                           m.IsPartialDefinition &&
-                           m.DeclaredAccessibility == Accessibility.Public &&
-                           !m.Name.StartsWith("odntrop_"))
-                .ToList() ?? new List<IMethodSymbol>();
+                if (classSymbol.IsStatic)
+                    exportedMethods = exportedMethods.Where(m => m.DeclaredAccessibility == Accessibility.Private).ToList();
+                else
+                    exportedMethods = exportedMethods.Where(m => m.DeclaredAccessibility == Accessibility.Internal ||
+                                                                  m.DeclaredAccessibility == Accessibility.Public).ToList();
+
+                importedMethods = new List<IMethodSymbol>();
+            }
+            else if (mode == InteropMode.Import)
+            {
+                exportedMethods = new List<IMethodSymbol>();
+
+                importedMethods = classSymbol.GetMembers()
+                    .OfType<IMethodSymbol>()
+                    .Where(m => m.MethodKind == MethodKind.Ordinary &&
+                               m.IsPartialDefinition &&
+                               m.DeclaredAccessibility == Accessibility.Public &&
+                               !m.Name.StartsWith("odntrop_"))
+                    .ToList() ?? new List<IMethodSymbol>();
+            }
+            else // Both (legacy)
+            {
+                exportedMethods = classSymbol.GetMembers()
+                    .OfType<IMethodSymbol>()
+                    .Where(m => m.MethodKind == MethodKind.Ordinary &&
+                               !m.Name.StartsWith("odntrop_"))
+                    .ToList();
+
+                if (classSymbol.IsStatic)
+                    exportedMethods = exportedMethods.Where(m => m.DeclaredAccessibility == Accessibility.Private).ToList();
+                else
+                    exportedMethods = exportedMethods.Where(m => m.DeclaredAccessibility == Accessibility.Internal ||
+                                                                  m.DeclaredAccessibility == Accessibility.Public).ToList();
+
+                importedMethods = classSymbol.GetMembers()
+                    .OfType<IMethodSymbol>()
+                    .Where(m => m.MethodKind == MethodKind.Ordinary &&
+                               m.IsPartialDefinition &&
+                               m.DeclaredAccessibility == Accessibility.Public &&
+                               !m.Name.StartsWith("odntrop_"))
+                    .ToList() ?? new List<IMethodSymbol>();
+            }
 
             sb.AppendLine("using OdinInterop;");
             sb.AppendLine("using System;");

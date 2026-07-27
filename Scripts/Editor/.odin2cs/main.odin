@@ -337,7 +337,7 @@ generate_csharp_file :: proc(base_name: string, class_names: [dynamic]string, cl
 		class_name := class_names[i]
 		methods := class_methods[i]
 
-		fmt.sbprintf(&b, "[GenerateOdinInterop]\n")
+		fmt.sbprintf(&b, "[OdinImport]\n")
 		fmt.sbprintf(&b, "internal static partial class %s\n", class_name)
 		strings.write_string(&b, "{\n")
 

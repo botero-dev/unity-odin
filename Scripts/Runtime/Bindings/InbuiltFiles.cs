@@ -2,7 +2,7 @@ namespace OdinInterop
 {
     internal static class InteropGeneratorInbuiltFiles
     {
-        internal const string ENGINE_BINDINGS_APPEND = @"
+        internal const string ENGINE_BINDINGS_EXPORT_APPEND = @"
 UnityPanic :: proc(prefix, message: string, loc := #caller_location) -> ! {
 	UnityOdnTropInternalPanic(prefix, message, loc.procedure, loc.file_path, loc.line, loc.column)
 	panic(message)
@@ -95,27 +95,6 @@ OdnTrop_Internal_GenerateRandomNumber :: proc(data: rawptr, mode: runtime.Random
 	}
 }
 
-@(private = ""file"")
-UnityOdnTropInternalGetMainOdnAllocator: UnityOdnTropInternalGetMainOdnAllocatorDelegate : proc() -> runtime.Allocator {
-	return UNITY_MAIN_ALLOCATOR
-}
-
-@(private = ""file"")
-UnityOdnTropInternalGetTempOdnAllocator: UnityOdnTropInternalGetTempOdnAllocatorDelegate : proc() -> runtime.Allocator {
-	return UNITY_MAIN_TEMP_ALLOCATOR
-}
-
-@(private = ""file"")
-UnityOdnTropInternalAllocateUsingOdnAllocator: UnityOdnTropInternalAllocateUsingOdnAllocatorDelegate : proc(size: i32, alignment: i32, count: i32, allocator: runtime.Allocator) -> []u8 {
-	x, _ := runtime.mem_alloc_bytes(size = int(size * count), alignment = int(alignment), allocator = allocator)
-	return x
-}
-
-@(private = ""file"")
-UnityOdnTropInternalFreeUsingOdnAllocator: UnityOdnTropInternalFreeUsingOdnAllocatorDelegate : proc(ptr: []u8, allocator: runtime.Allocator) {
-	runtime.mem_free_bytes(bytes = ptr, allocator = allocator)
-}
-
 InstantiateObject :: proc {
 	InstantiateObjectWithoutTransform,
 	InstantiateObjectWithTransform,
@@ -138,6 +117,29 @@ IsEnabled :: proc {
     IsBehaviourEnabled,
     IsRendererEnabled,
     IsColliderEnabled,
+}
+";
+
+        internal const string ENGINE_BINDINGS_IMPORT_APPEND = @"
+@(private = ""file"")
+UnityOdnTropInternalGetMainOdnAllocator: UnityOdnTropInternalGetMainOdnAllocatorDelegate : proc() -> runtime.Allocator {
+	return UNITY_MAIN_ALLOCATOR
+}
+
+@(private = ""file"")
+UnityOdnTropInternalGetTempOdnAllocator: UnityOdnTropInternalGetTempOdnAllocatorDelegate : proc() -> runtime.Allocator {
+	return UNITY_MAIN_TEMP_ALLOCATOR
+}
+
+@(private = ""file"")
+UnityOdnTropInternalAllocateUsingOdnAllocator: UnityOdnTropInternalAllocateUsingOdnAllocatorDelegate : proc(size: i32, alignment: i32, count: i32, allocator: runtime.Allocator) -> []u8 {
+	x, _ := runtime.mem_alloc_bytes(size = int(size * count), alignment = int(alignment), allocator = allocator)
+	return x
+}
+
+@(private = ""file"")
+UnityOdnTropInternalFreeUsingOdnAllocator: UnityOdnTropInternalFreeUsingOdnAllocatorDelegate : proc(ptr: []u8, allocator: runtime.Allocator) {
+	runtime.mem_free_bytes(bytes = ptr, allocator = allocator)
 }
 ";
 

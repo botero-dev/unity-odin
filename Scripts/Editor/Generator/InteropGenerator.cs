@@ -17,6 +17,13 @@ namespace OdinInterop.Editor
 
         private static HashSet<Type> s_ExportedTypes = new HashSet<Type>(256); // to create in odin
 
+        private enum InteropMode
+        {
+            Export,  // C# -> Odin: only process exported (non-public) methods
+            Import,  // Odin -> C#: only process imported (public static partial) methods
+            Both     // Legacy: process both
+        }
+
         internal static void GenerateInteropCode()
         {
             s_ExportedTypes.Clear();
@@ -125,18 +132,44 @@ namespace OdinInterop.Editor
                 File.WriteAllText(p, s_StrBld.ToString());
             }
 
-            // actual bindings generation
+            // collect all types with their interop modes (deduplicate)
+            var interopTypes = new Dictionary<Type, InteropMode>();
+
             foreach (var t in TypeCache.GetTypesWithAttribute<GenerateOdinInteropAttribute>())
             {
-                // public static partial classes only
-                if (!(t.IsAbstract && t.IsSealed))
-                {
-                    Debug.LogError($"[Odin Interop] Type {t.FullName} is marked with GenerateOdinInteropAttribute but is not a static class. Process may fail...");
-                    //continue;
-                }
+                if (!interopTypes.ContainsKey(t))
+                    interopTypes[t] = InteropMode.Both;
+                else if (interopTypes[t] != InteropMode.Both)
+                    interopTypes[t] = InteropMode.Both;
+            }
 
-                var attr = t.GetCustomAttribute<GenerateOdinInteropAttribute>();
-                GenerateInteropCodeInternal(t, attr);
+            foreach (var t in TypeCache.GetTypesWithAttribute<OdinExportAttribute>())
+            {
+                if (!interopTypes.ContainsKey(t))
+                    interopTypes[t] = InteropMode.Export;
+                else if (interopTypes[t] == InteropMode.Import)
+                    interopTypes[t] = InteropMode.Both;
+            }
+
+            foreach (var t in TypeCache.GetTypesWithAttribute<OdinImportAttribute>())
+            {
+                if (!interopTypes.ContainsKey(t))
+                    interopTypes[t] = InteropMode.Import;
+                else if (interopTypes[t] == InteropMode.Export)
+                    interopTypes[t] = InteropMode.Both;
+            }
+
+            // actual bindings generation
+            foreach (var kvp in interopTypes)
+            {
+                var t = kvp.Key;
+                var mode = kvp.Value;
+
+                var legacyAttr = t.GetCustomAttribute<GenerateOdinInteropAttribute>();
+                var exportAttr = t.GetCustomAttribute<OdinExportAttribute>();
+                var importAttr = t.GetCustomAttribute<OdinImportAttribute>();
+                var odinSrcAppend = legacyAttr?.odinSrcAppend ?? exportAttr?.odinSrcAppend ?? importAttr?.odinSrcAppend ?? "";
+                GenerateInteropCodeInternal(t, odinSrcAppend, mode);
             }
 
             // export types
@@ -173,23 +206,33 @@ namespace OdinInterop.Editor
             return sb;
         }
 
-        private static void GenerateInteropCodeInternal(Type t, GenerateOdinInteropAttribute attr)
+        private static void GenerateInteropCodeInternal(Type t, string odinSrcAppend, InteropMode mode)
         {
             var tyName = t.FullName.Replace('+', '.').Replace('.', '_');
-            var cleanTyName = tyName == "OdinInterop_EngineBindings" ? "" : tyName;
+            var cleanTyName = (tyName == "OdinInterop_EngineBindings" || tyName == "OdinInterop_EngineBindingsImports") ? "" : tyName;
             var underScoreIfCleanTyName = cleanTyName == "" ? "" : "_";
             var className = t.Name;
             var instName = $"_{className}";
             
+            MethodInfo[] exportedFns, importedFns;
 
-            var exportedFns = t.GetMethods(BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly).Where(x => !x.Name.StartsWith("odntrop_")).ToArray();
-            var importedFns = t.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly).Where(x => !x.Name.StartsWith("odntrop_")).ToArray();
+            if (mode == InteropMode.Export)
+            {
+                exportedFns = t.GetMethods(BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly).Where(x => !x.Name.StartsWith("odntrop_")).ToArray();
+                importedFns = Array.Empty<MethodInfo>();
+            }
+            else if (mode == InteropMode.Import)
+            {
+                exportedFns = Array.Empty<MethodInfo>();
+                importedFns = t.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly).Where(x => !x.Name.StartsWith("odntrop_")).ToArray();
+            }
+            else // Both (legacy)
+            {
+                exportedFns = t.GetMethods(BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly).Where(x => !x.Name.StartsWith("odntrop_")).ToArray();
+                importedFns = t.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly).Where(x => !x.Name.StartsWith("odntrop_")).ToArray();
+            }
 
             Debug.Log($"[Odin Interop] Generating bindings for {t.FullName}: {exportedFns.Length} exported functions, {importedFns.Length} imported functions");
-            foreach (var fn in exportedFns)
-                Debug.Log($"[Odin Interop]   Exported: {t.FullName} {fn.Name}");
-            foreach (var fn in importedFns)
-                Debug.Log($"[Odin Interop]   Imported: {t.FullName} {fn.Name}");
 
             {
                 var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, $"odntrop_{tyName}.odin"));
@@ -318,11 +361,6 @@ namespace OdinInterop.Editor
 
                 foreach (var exportedFn in exportedFns)
                 {
-                    if (!exportedFn.IsStatic)
-                    {
-                        Debug.LogWarning($"parsing nonstatic exported {tyName} {exportedFn}");
-                    }
-                    
                     
                     // signature
                     {
@@ -523,8 +561,8 @@ namespace OdinInterop.Editor
                     }
                 }
 
-                if (!string.IsNullOrWhiteSpace(attr.odinSrcAppend))
-                    s_StrBld.AppendLine(attr.odinSrcAppend);
+                if (!string.IsNullOrWhiteSpace(odinSrcAppend))
+                    s_StrBld.AppendLine(odinSrcAppend);
 
                 File.WriteAllText(tgtFile, s_StrBld.ToString());
             }
