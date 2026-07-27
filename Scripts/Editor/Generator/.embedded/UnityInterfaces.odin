@@ -326,6 +326,8 @@ when UNITY_EDITOR {
 			UnityOdnTropInternalInitialiseCachedState()
 			ptr.cached = G_GlobalState.cached
 			ptr.initialised = true
+		} else {
+			G_GlobalState.cached = ptr.cached
 		}
 	}
 } else {
