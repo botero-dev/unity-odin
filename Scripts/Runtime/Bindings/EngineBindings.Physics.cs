@@ -22,8 +22,6 @@ namespace OdinInterop
         private static void SetPhysicsDefaultMaxAngularSpeed(float speed) => Physics.defaultMaxAngularSpeed = speed;
         private static float GetPhysicsDefaultMaxDepenetrationVelocity() => Physics.defaultMaxDepenetrationVelocity;
         private static void SetPhysicsDefaultMaxDepenetrationVelocity(float velocity) => Physics.defaultMaxDepenetrationVelocity = velocity;
-        private static bool GetPhysicsAutoSyncTransforms() => Physics.autoSyncTransforms;
-        private static void SetPhysicsAutoSyncTransforms(bool autoSync) => Physics.autoSyncTransforms = autoSync;
         private static bool GetPhysicsReuseCollisionCallbacks() => Physics.reuseCollisionCallbacks;
         private static void SetPhysicsReuseCollisionCallbacks(bool reuse) => Physics.reuseCollisionCallbacks = reuse;
         private static PhysicsScene GetPhysicsDefaultPhysicsScene() => Physics.defaultPhysicsScene;

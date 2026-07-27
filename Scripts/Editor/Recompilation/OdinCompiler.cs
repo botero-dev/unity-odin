@@ -712,8 +712,6 @@ namespace OdinInterop.Editor
                 switch (PlayerSettings.Android.minSdkVersion)
                 {
                     case AndroidSdkVersions.AndroidApiLevelAuto: return "35";
-                    case AndroidSdkVersions.AndroidApiLevel23: return "23";
-                    case AndroidSdkVersions.AndroidApiLevel24: return "24";
                     case AndroidSdkVersions.AndroidApiLevel25: return "25";
                     case AndroidSdkVersions.AndroidApiLevel26: return "26";
                     case AndroidSdkVersions.AndroidApiLevel27: return "27";

@@ -40,7 +40,7 @@ namespace OdinInterop
         private static void LoadSceneByName(String8 name, LoadSceneMode mode = default) => SceneManager.LoadScene(name.ToString(), mode);
         private static void MergeScenes(Scene src, Scene dst) => SceneManager.MergeScenes(src, dst);
         private static void MoveGameObjectsToScene(Slice<ObjectHandle<GameObject>> gameObjects, Scene scene) =>
-            SceneManager.MoveGameObjectsToScene(NativeArrayUnsafeUtility.ConvertExistingDataToNativeArray<int>(gameObjects.ptr, gameObjects.len.ToInt32(), UnityAllocator.None), scene);
+            SceneManager.MoveGameObjectsToScene(NativeArrayUnsafeUtility.ConvertExistingDataToNativeArray<EntityId>(gameObjects.ptr, gameObjects.len.ToInt32(), UnityAllocator.None), scene);
         private static void MoveGameObjectToScene(ObjectHandle<GameObject> gameObject, Scene scene) => SceneManager.MoveGameObjectToScene(gameObject.value, scene);
         private static bool SetActiveScene(Scene scene) => SceneManager.SetActiveScene(scene);
         private static uint LoadSceneAsyncByBuildIndex(int buildIndex, LoadSceneMode lsMode = default, LocalPhysicsMode phMode = default) =>
