@@ -264,7 +264,7 @@ namespace OdinInterop
 
     public struct ObjectHandle<T> where T : Object
     {
-        public int id;
+        public EntityId id;
 
         public static implicit operator bool(ObjectHandle<T> handle)
         {
@@ -275,13 +275,13 @@ namespace OdinInterop
 
         public static implicit operator T(ObjectHandle<T> handle)
         {
-            return (T)Resources.InstanceIDToObject(handle.id);
+            return (T)Resources.EntityIdToObject(handle.id);
         }
 
         public static implicit operator ObjectHandle<T>(T obj)
         {
             ObjectHandle<T> handle;
-            handle.id = obj ? obj.GetInstanceID() : 0;
+            handle.id = obj ? obj.GetEntityId() : 0;
             return handle;
         }
 

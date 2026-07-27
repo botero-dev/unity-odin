@@ -14,18 +14,32 @@ namespace OdinInterop
         private static extern IntPtr dlopen(string path, int flag);
 
         [DllImport("__Internal")]
+        private static extern IntPtr dlerror();
+
+        [DllImport("__Internal")]
         private static extern IntPtr dlsym(IntPtr handle, string symbolName);
 
         [DllImport("__Internal")]
         private static extern int dlclose(IntPtr handle);
 
-        public static IntPtr OpenLibrary(string path) => dlopen(path,
+        public static IntPtr OpenLibrary(string path)
+        {
 #if !UNITY_EDITOR && UNITY_ANDROID
-            RTLD_LOCAL | RTLD_NOW
+            int flags = RTLD_LOCAL | RTLD_NOW;
 #else
-            0
+            int flags = 0;
+            flags = RTLD_LOCAL | RTLD_NOW;
 #endif
-        );
+            IntPtr handle = dlopen(path, flags);
+            if (handle == IntPtr.Zero)
+            {
+                var errPtr = dlerror();
+                var errMsg = Marshal.PtrToStringAnsi(errPtr);
+                UnityEngine.Debug.LogError($"[LibraryUtils] dlopen failed for '{path}': {errMsg}");
+            }
+            return handle;
+
+        }
 
         public static void CloseLibrary(IntPtr libraryHandle) => dlclose(libraryHandle);
 
