@@ -30,8 +30,6 @@ namespace OdinInterop.SourceGenerator
                 var classSymbol = model.GetDeclaredSymbol(classDeclaration);
 
                 if (classSymbol == null ||
-                    !classSymbol.IsStatic || // is static
-                                             // has attribute
                     !classSymbol.GetAttributes().Any(a => a.AttributeClass?.GetFullTypeName() == "OdinInterop.GenerateOdinInteropAttribute"))
                     continue;
 
@@ -51,19 +49,30 @@ namespace OdinInterop.SourceGenerator
             var sbIndent = 0;
 
             var tyName = classSymbol.GetFullTypeName().Replace('.', '_');
+            var instTypeName = classSymbol.Name;
+            var instParamName = $"_{instTypeName}";
 
             var exportedMethods = classSymbol.GetMembers()
                 .OfType<IMethodSymbol>()
                 .Where(m => m.MethodKind == MethodKind.Ordinary &&
-                           m.IsStatic &&
-                           m.DeclaredAccessibility == Accessibility.Private &&
                            !m.Name.StartsWith("odntrop_"))
                 .ToList();
+
+            // For static classes (partial extension), private members are accessible.
+            // For non-static classes (separate generated class), only internal/public.
+            if (classSymbol.IsStatic)
+            {
+                exportedMethods = exportedMethods.Where(m => m.DeclaredAccessibility == Accessibility.Private).ToList();
+            }
+            else
+            {
+                exportedMethods = exportedMethods.Where(m => m.DeclaredAccessibility == Accessibility.Internal ||
+                                                              m.DeclaredAccessibility == Accessibility.Public).ToList();
+            }
 
             var importedMethods = classSymbol.GetMembers()
                 .OfType<IMethodSymbol>()
                 .Where(m => m.MethodKind == MethodKind.Ordinary &&
-                           m.IsStatic &&
                            m.IsPartialDefinition &&
                            m.DeclaredAccessibility == Accessibility.Public &&
                            !m.Name.StartsWith("odntrop_"))
@@ -109,7 +118,8 @@ namespace OdinInterop.SourceGenerator
                     break;
             }
 
-            sb.AppendLine($"static unsafe partial class {classSymbol.Name}");
+            var generatedClassName = classSymbol.IsStatic ? classSymbol.Name : $"{classSymbol.Name}_OdinInterop";
+            sb.AppendLine($"static unsafe partial class {generatedClassName}");
             sb.AppendIndent(sbIndent).AppendLine("{");
             sbIndent++;
 
@@ -124,12 +134,20 @@ namespace OdinInterop.SourceGenerator
             sb.AppendLine();
             sbIndent--;
 
+            // Helper: append instance parameter with comma handling
+            void AppendInstanceParam(bool hasMoreParams)
+            {
+                sb.Append("RawObjectHandle ").Append(instParamName);
+                if (hasMoreParams) sb.Append(", ");
+            }
+
             // generate some delegates for exported methods
             foreach (var method in exportedMethods)
             {
                 sb.AppendIndent(sbIndent).Append("private delegate ");
                 sb.AppendReturnType(method, true);
                 sb.Append($" odntrop_del_{method.Name}(");
+                if (!method.IsStatic) { AppendInstanceParam(method.Parameters.Length > 0); }
                 sb.AppendParameters(method.Parameters, true);
                 sb.AppendLine(");");
                 sb.AppendLine();
@@ -150,6 +168,7 @@ namespace OdinInterop.SourceGenerator
                 sb.AppendIndent(sbIndent).Append("private delegate ");
                 sb.AppendReturnType(method, true);
                 sb.Append($" odntrop_del_{method.Name}(");
+                if (!method.IsStatic) { AppendInstanceParam(method.Parameters.Length > 0); }
                 sb.AppendParameters(method.Parameters, true);
                 sb.AppendLine(");");
                 sb.AppendLine();
@@ -158,6 +177,11 @@ namespace OdinInterop.SourceGenerator
             // set up p/invoke friendly-wrappers for exported functions
             foreach (var method in exportedMethods)
             {
+                if (method.Name == "comp")
+                {
+                    continue;
+                }
+
                 sb.AppendIndent(sbIndent)
                     .Append("[AOT.MonoPInvokeCallback(typeof(odntrop_del_")
                     .Append(method.Name)
@@ -168,10 +192,27 @@ namespace OdinInterop.SourceGenerator
                     .Append(" odntrop_exported_")
                     .Append(method.Name)
                     .Append("(");
+                if (!method.IsStatic) { sb.Append("RawObjectHandle ").Append(instParamName); if (method.Parameters.Length > 0) sb.Append(", "); }
                 sb.AppendParameters(method.Parameters, true);
                 sb.AppendLine(")");
                 sb.AppendIndent(sbIndent).AppendLine("{");
                 sbIndent++;
+
+                // instance conversion for non-static methods
+                if (!method.IsStatic)
+                {
+                    sb.AppendIndent(sbIndent)
+                        .AppendTypeName(classSymbol, false)
+                        .Append(" ")
+                        .Append(instParamName)
+                        .Append("_odntrop_internal_proxy = (")
+                        .AppendTypeName(classSymbol, false)
+                        .Append(")(OdinInterop.ObjectHandle<")
+                        .AppendTypeName(classSymbol, false)
+                        .Append(">)")
+                        .Append(instParamName)
+                        .AppendLine(";");
+                }
 
                 // conversions to non-interoperable (if any)
                 foreach (var par in method.Parameters)
@@ -200,7 +241,37 @@ namespace OdinInterop.SourceGenerator
 
                             break;
                         case InteroperabilityType.CustomMarshalled:
-                            // TODO handle custom marshalled types
+                            if (par.Type.IsUnityObject())
+                            {
+                                // Unity Objects: convert RawObjectHandle → original type
+                                if (rk == RefKind.None || rk == RefKind.Ref || rk == RefKind.In)
+                                {
+                                    sb.AppendIndent(sbIndent)
+                                        .AppendTypeName(par.Type, false)
+                                        .Append(" ")
+                                        .Append(par.Name)
+                                        .Append("_odntrop_internal_proxy")
+                                        .Append(" = (")
+                                        .AppendTypeName(par.Type, false)
+                                        .Append(")(OdinInterop.ObjectHandle<")
+                                        .AppendTypeName(par.Type, false)
+                                        .Append(">)")
+                                        .AppendLine(";");
+                                }
+                                else if (rk == RefKind.Out)
+                                {
+                                    sb.AppendIndent(sbIndent)
+                                        .AppendTypeName(par.Type, false)
+                                        .Append(" ")
+                                        .Append(par.Name)
+                                        .Append("_odntrop_internal_proxy")
+                                        .AppendLine(" = default;");
+                                }
+                            }
+                            else
+                            {
+                                // TODO handle non-Unity-Object custom marshalled types
+                            }
                             break;
                     }
                 }
@@ -219,7 +290,14 @@ namespace OdinInterop.SourceGenerator
                     else if (method.ReturnsByRefReadonly)
                         sb.Append("ref readonly ");
                 }
-                sb.Append(method.Name).Append("(");
+                if (!method.IsStatic)
+                {
+                    sb.Append(instParamName).Append("_odntrop_internal_proxy.").Append(method.Name).Append("(");
+                }
+                else
+                {
+                    sb.Append(method.Name).Append("(");
+                }
                 sb.AppendParameters(method.Parameters, null);
                 sb.AppendLine(");");
 
@@ -244,7 +322,24 @@ namespace OdinInterop.SourceGenerator
 
                             break;
                         case InteroperabilityType.CustomMarshalled:
-                            // TODO handle custom marshalled types
+                            if (par.Type.IsUnityObject())
+                            {
+                                // Unity Objects: convert back from original type → RawObjectHandle
+                                if (rk == RefKind.Ref || rk == RefKind.Out)
+                                {
+                                    sb.AppendIndent(sbIndent)
+                                        .Append(par.Name)
+                                        .Append(" = (OdinInterop.RawObjectHandle)(OdinInterop.ObjectHandle<")
+                                        .AppendTypeName(par.Type, false)
+                                        .Append(">)")
+                                        .Append(par.Name)
+                                        .AppendLine("_odntrop_internal_proxy;");
+                                }
+                            }
+                            else
+                            {
+                                // TODO handle non-Unity-Object custom marshalled types
+                            }
                             break;
                     }
                 }
@@ -359,6 +454,7 @@ namespace OdinInterop.SourceGenerator
                     .Append(" odntrop_delref_")
                     .Append(method.Name)
                     .Append("(");
+                if (!method.IsStatic) { sb.Append("RawObjectHandle ").Append(instParamName); if (method.Parameters.Length > 0) sb.Append(", "); }
                 sb.AppendParameters(method.Parameters, true);
                 sb.AppendLine(");");
                 sb.AppendLine();
@@ -414,6 +510,7 @@ namespace OdinInterop.SourceGenerator
                     .Append(" ")
                     .Append(method.Name)
                     .Append("(");
+                if (!method.IsStatic) { sb.AppendTypeName(classSymbol, false).Append(" ").Append(instParamName); if (method.Parameters.Length > 0) sb.Append(", "); }
                 sb.AppendParameters(method.Parameters, false);
                 sb.AppendLine(")");
                 sb.AppendIndent(sbIndent).AppendLine("{");
@@ -445,6 +542,47 @@ namespace OdinInterop.SourceGenerator
                     .AppendLine("#endif")
                     .AppendLine();
 
+                // instance proxy conversion for non-static imported methods
+                if (!method.IsStatic)
+                {
+                    sb.AppendIndent(sbIndent)
+                        .Append("OdinInterop.RawObjectHandle ")
+                        .Append(instParamName)
+                        .Append("_odntrop_internal_proxy = (OdinInterop.RawObjectHandle)(OdinInterop.ObjectHandle<")
+                        .AppendTypeName(classSymbol, false)
+                        .Append(">)")
+                        .Append(instParamName)
+                        .AppendLine(";");
+                }
+
+                // proxy declarations for imported method call (convert to interop types)
+                foreach (var par in method.Parameters)
+                {
+                    var rk = par.RefKind;
+                    if (par.Type.IsUnityObject())
+                    {
+                        if (rk == RefKind.None || rk == RefKind.Ref || rk == RefKind.In)
+                        {
+                            sb.AppendIndent(sbIndent)
+                                .Append("OdinInterop.RawObjectHandle ")
+                                .Append(par.Name)
+                                .Append("_odntrop_internal_proxy = (OdinInterop.RawObjectHandle)(OdinInterop.ObjectHandle<")
+                                .AppendTypeName(par.Type, false)
+                                .Append(">)")
+                                .Append(par.Name)
+                                .AppendLine(";");
+                        }
+                        else if (rk == RefKind.Out)
+                        {
+                            sb.AppendIndent(sbIndent)
+                                .Append("OdinInterop.RawObjectHandle ")
+                                .Append(par.Name)
+                                .Append("_odntrop_internal_proxy")
+                                .AppendLine(" = default;");
+                        }
+                    }
+                }
+
                 sb.AppendIndent(sbIndent);
                 if (!method.ReturnsVoid)
                     sb.Append("return ");
@@ -454,9 +592,31 @@ namespace OdinInterop.SourceGenerator
                     sb.Append("ref readonly ");
                 sb.Append("odntrop_delref_")
                     .Append(method.Name)
-                    .Append("(")
-                    .AppendParameters(method.Parameters, null)
+                    .Append("(");
+                if (!method.IsStatic) { sb.Append(instParamName).Append("_odntrop_internal_proxy"); if (method.Parameters.Length > 0) sb.Append(", "); }
+                sb.AppendParameters(method.Parameters, null)
                     .AppendLine(");");
+
+                // proxy copy-back for imported method call (convert back from interop types)
+                foreach (var par in method.Parameters)
+                {
+                    var rk = par.RefKind;
+                    if (par.Type.IsUnityObject())
+                    {
+                        if (rk == RefKind.Ref || rk == RefKind.Out)
+                        {
+                            sb.AppendIndent(sbIndent)
+                                .Append(par.Name)
+                                .Append(" = (")
+                                .AppendTypeName(par.Type, false)
+                                .Append(")(OdinInterop.ObjectHandle<")
+                                .AppendTypeName(par.Type, false)
+                                .Append(">)")
+                                .Append(par.Name)
+                                .AppendLine("_odntrop_internal_proxy;");
+                        }
+                    }
+                }
 
                 sb.AppendLine("#endif");
 
@@ -489,11 +649,7 @@ namespace OdinInterop.SourceGenerator
                     // any attributes
                     if (classDeclaration.AttributeLists.Count > 0)
                     {
-                        // is static
-                        if (classDeclaration.Modifiers.Any(m => m.IsKind(SyntaxKind.StaticKeyword)))
-                        {
-                            candidateClasses.Add(classDeclaration);
-                        }
+                        candidateClasses.Add(classDeclaration);
                     }
                 }
             }
@@ -610,6 +766,9 @@ namespace OdinInterop.SourceGenerator
                     sb.Append(" ");
                 }
                 sb.Append(par.Name);
+
+
+
                 if (varIsProxy && !useInteroperableVersion.HasValue)
                 {
                     sb.Append($"_odntrop_internal_proxy");
