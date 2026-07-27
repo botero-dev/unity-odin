@@ -13,6 +13,8 @@ ProcInfo :: struct {
 	odin_name:   string,
 	params:      []ParamInfo,
 	return_type: string,
+	source_file: string,
+	source_line: int,
 }
 
 ParamInfo :: struct {
@@ -72,7 +74,7 @@ main :: proc() {
 		// Collect procs from this file only
 		file_procs := make([dynamic]ProcInfo)
 		for decl in file.decls {
-			process_node(decl, &file_procs)
+			process_node(decl, &file_procs, path)
 		}
 
 		if len(file_procs) == 0 {
@@ -124,15 +126,15 @@ main :: proc() {
 	}
 }
 
-process_node :: proc(stmt: ^ast.Stmt, procs: ^[dynamic]ProcInfo) {
+process_node :: proc(stmt: ^ast.Stmt, procs: ^[dynamic]ProcInfo, source_path: string) {
 	#partial switch s in stmt.derived_stmt {
 	case ^ast.Value_Decl:
-		process_value_decl(s, procs)
+		process_value_decl(s, procs, source_path)
 	case:
 	}
 }
 
-process_value_decl :: proc(vd: ^ast.Value_Decl, procs: ^[dynamic]ProcInfo) {
+process_value_decl :: proc(vd: ^ast.Value_Decl, procs: ^[dynamic]ProcInfo, source_path: string) {
 	if len(vd.names) == 0 || len(vd.values) == 0 {
 		return
 	}
@@ -198,6 +200,8 @@ process_value_decl :: proc(vd: ^ast.Value_Decl, procs: ^[dynamic]ProcInfo) {
 		method_name = strings.clone(method_name_pascal),
 		odin_name   = strings.clone(full_name),
 		return_type = extract_return_type(proc_type),
+		source_file = strings.clone(source_path),
+		source_line = proc_lit.pos.line,
 	}
 
 	// Extract params
@@ -351,6 +355,11 @@ generate_csharp_file :: proc(base_name: string, class_names: [dynamic]string, cl
 				return_type = map_type(return_type)
 			}
 
+			// Emit source link
+			if m.source_line > 0 {
+				fmt.sbprintf(&b, "\t// Source: file://%s#L%d\n", m.source_file, m.source_line)
+			}
+
 			// Emit ForeignDecl attribute with Odin name and original type info
 			strings.write_string(&b, "\t[ForeignDecl(OdinName = \"")
 			strings.write_string(&b, m.odin_name)
@@ -382,7 +391,7 @@ generate_csharp_file :: proc(base_name: string, class_names: [dynamic]string, cl
 				fmt.sbprintf(&b, "%s %s", cs_type, param.name)
 			}
 
-			strings.write_string(&b, ");\n")
+			strings.write_string(&b, ");\n\n")
 		}
 
 		strings.write_string(&b, "}\n")
