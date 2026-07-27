@@ -1,7 +1,10 @@
 using UnityEngine;
 
+/// <summary>
+/// Creates a DontDestroyOnLoad GameObject that forwards Unity lifecycle callbacks
+/// to Odin via the Global import class. 
 [AddComponentMenu("")]
-public class OdinInteropHook : MonoBehaviour
+public class OdinGlobalHooks : MonoBehaviour
 {
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void Initialise() => DontDestroyOnLoad(new GameObject("[OdinInteropHook]", typeof(OdinInteropHook)));
@@ -13,4 +16,3 @@ public class OdinInteropHook : MonoBehaviour
     private void LateUpdate() => Global.OnLateUpdate(Time.deltaTime, Time.unscaledDeltaTime);
     private void OnDestroy() => Global.OnDestroy();
 }
-

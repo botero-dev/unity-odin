@@ -47,14 +47,13 @@ namespace OdinInterop.Editor
                     File.Delete(file);
             }
 
-            // hand-coded internal files -> exports/ (except CtxSetup -> imports/)
+            // hand-coded internal files -> exports/
             {
                 var p = Path.GetFullPath("Packages/com.herohiralal.odininterop/");
                 p = Path.Combine(p, "Scripts", "Editor", "Generator", ".embedded");
                 foreach (var f in Directory.GetFiles(p, "*.odin", SearchOption.TopDirectoryOnly))
                 {
                     var tgtFileName = Path.GetFileName(f);
-                    if (tgtFileName == "stubs.odin") continue; // only for satisfying the lsp
 
                     var tgtDir = ODIN_INTEROP_EXPORTS_DIR;
                     var tgtFile = Path.GetFullPath(Path.Combine(tgtDir, tgtFileName));
