@@ -10,6 +10,7 @@ import "core:strings"
 ProcInfo :: struct {
 	class_name:  string,
 	method_name: string,
+	odin_name:   string,
 	params:      []ParamInfo,
 	return_type: string,
 }
@@ -195,6 +196,7 @@ process_value_decl :: proc(vd: ^ast.Value_Decl, procs: ^[dynamic]ProcInfo) {
 	info := ProcInfo{
 		class_name  = strings.clone(class_name_pascal),
 		method_name = strings.clone(method_name_pascal),
+		odin_name   = strings.clone(full_name),
 		return_type = extract_return_type(proc_type),
 	}
 
@@ -314,8 +316,8 @@ map_type :: proc(odin_type: string) -> string {
 	case "f32":   return "float"
 	case "f64":   return "double"
 	case "bool":  return "bool"
-	case "int":   return "int"
-	case "uint":  return "uint"
+	case "int":   return "long"
+	case "uint":  return "ulong"
 	case "string": return "string"
 	case "rawptr": return "void*"
 	case "rawslice": return "RawSlice"
@@ -348,6 +350,28 @@ generate_csharp_file :: proc(base_name: string, class_names: [dynamic]string, cl
 			} else {
 				return_type = map_type(return_type)
 			}
+
+			// Emit ForeignDecl attribute with Odin name and original type info
+			strings.write_string(&b, "\t[ForeignDecl(OdinName = \"")
+			strings.write_string(&b, m.odin_name)
+			strings.write_string(&b, "\"")
+
+			if m.return_type != "" {
+				fmt.sbprintf(&b, ", ReturnType = \"%s\"", m.return_type)
+			}
+
+			if len(m.params) > 0 {
+				strings.write_string(&b, ", ParamTypes = new[] { ")
+				for param, j in m.params {
+					if j > 0 {
+						strings.write_string(&b, ", ")
+					}
+					fmt.sbprintf(&b, "\"%s\"", param.type)
+				}
+				strings.write_string(&b, " }")
+			}
+
+			strings.write_string(&b, ")]\n")
 			fmt.sbprintf(&b, "\tpublic static partial %s %s(", return_type, m.method_name)
 
 			for param, j in m.params {

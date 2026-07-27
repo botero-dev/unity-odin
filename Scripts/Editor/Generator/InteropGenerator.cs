@@ -17,12 +17,6 @@ namespace OdinInterop.Editor
 
         private static HashSet<Type> s_ExportedTypes = new HashSet<Type>(256); // to create in odin
 
-        private enum InteropMode
-        {
-            Export,  // C# -> Odin: only process exported (non-public) methods
-            Import   // Odin -> C#: only process imported (public static partial) methods
-        }
-
         internal static void GenerateInteropCode()
         {
             s_ExportedTypes.Clear();
@@ -35,12 +29,16 @@ namespace OdinInterop.Editor
                     Directory.CreateDirectory(ODIN_INTEROP_OUT_DIR);
                 }
 
-                foreach (var file in Directory.GetFiles(ODIN_INTEROP_OUT_DIR, "odntrop_*.odin", SearchOption.TopDirectoryOnly))
+                foreach (var file in Directory.GetFiles(ODIN_INTEROP_OUT_DIR, "export_*.odin", SearchOption.TopDirectoryOnly))
                 {
                     if (File.Exists(file))
-                    {
                         File.Delete(file);
-                    }
+                }
+
+                foreach (var file in Directory.GetFiles(ODIN_INTEROP_OUT_DIR, "import_*.odin", SearchOption.TopDirectoryOnly))
+                {
+                    if (File.Exists(file))
+                        File.Delete(file);
                 }
             }
 
@@ -55,7 +53,7 @@ namespace OdinInterop.Editor
 
                     tgtFileName = "odntrop_internal_" + tgtFileName;
                     var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, tgtFileName));
-                    File.Copy(f, tgtFile);
+                    File.Copy(f, tgtFile, overwrite: true);
                 }
             }
 
@@ -131,29 +129,34 @@ namespace OdinInterop.Editor
                 File.WriteAllText(p, s_StrBld.ToString());
             }
 
-            // collect all types with their interop modes
-            var interopTypes = new Dictionary<Type, InteropMode>();
+            // collect export and import types separately
+            var exportTypes = new HashSet<Type>();
+            var importTypes = new HashSet<Type>();
 
             foreach (var t in TypeCache.GetTypesWithAttribute<OdinExportAttribute>())
-                interopTypes[t] = InteropMode.Export;
+            {
+                exportTypes.Add(t);
+                importTypes.Remove(t); // Export takes precedence
+            }
 
             foreach (var t in TypeCache.GetTypesWithAttribute<OdinImportAttribute>())
             {
-                if (interopTypes.ContainsKey(t))
-                    continue; // OdinExport takes precedence if both are present
-                interopTypes[t] = InteropMode.Import;
+                if (!exportTypes.Contains(t))
+                    importTypes.Add(t);
             }
 
-            // actual bindings generation
-            foreach (var kvp in interopTypes)
+            // generate export bindings
+            foreach (var t in exportTypes)
             {
-                var t = kvp.Key;
-                var mode = kvp.Value;
+                var attr = t.GetCustomAttribute<OdinExportAttribute>();
+                GenerateExportOdinCode(t, attr?.odinSrcAppend ?? "");
+            }
 
-                var exportAttr = t.GetCustomAttribute<OdinExportAttribute>();
-                var importAttr = t.GetCustomAttribute<OdinImportAttribute>();
-                var odinSrcAppend = exportAttr?.odinSrcAppend ?? importAttr?.odinSrcAppend ?? "";
-                GenerateInteropCodeInternal(t, odinSrcAppend, mode);
+            // generate import bindings
+            foreach (var t in importTypes)
+            {
+                var attr = t.GetCustomAttribute<OdinImportAttribute>();
+                GenerateImportOdinCode(t, attr?.odinSrcAppend ?? "");
             }
 
             // export types
@@ -190,361 +193,390 @@ namespace OdinInterop.Editor
             return sb;
         }
 
-        private static void GenerateInteropCodeInternal(Type t, string odinSrcAppend, InteropMode mode)
+        private static void GenerateExportOdinCode(Type t, string odinSrcAppend)
+        {
+            var tyName = t.FullName.Replace('+', '.').Replace('.', '_');
+            var cleanTyName = tyName == "OdinInterop_EngineBindings" ? "" : tyName;
+            var underScoreIfCleanTyName = cleanTyName == "" ? "" : "_";
+            var className = t.Name;
+            var instName = $"_{className}";
+
+            var exportedFns = t.GetMethods(BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                .Where(x => !x.Name.StartsWith("odntrop_"))
+                .ToArray();
+
+            if (exportedFns.Length == 0)
+                return;
+
+            Debug.Log($"[Odin Interop] Generating export bindings for {t.FullName}: {exportedFns.Length} exported functions");
+
+            var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, $"export_{tyName}.odin"));
+
+            s_StrBld
+                .Clear()
+                .AppendLine("// THIS IS A GENERATED FILE - DO NOT MODIFY OR YOUR CHANGES WILL BE LOST!")
+                .AppendLine("#+vet !tabs !unused !style")
+                .AppendLine("package src")
+                .AppendLine()
+                .AppendLine("@require import \"base:runtime\"")
+                .AppendLine();
+
+            foreach (var exportedFn in exportedFns)
+            {
+                // delegate signature type
+                {
+                    s_StrBld
+                        .AppendIndent()
+                        .AppendLine("@(private = \"file\")")
+                        .AppendIndent()
+                        .Append($"odntrop_del_{tyName}_{exportedFn.Name} :: #type proc \"c\" (");
+
+                    if (!exportedFn.IsStatic)
+                    {
+                        s_StrBld.Append(instName).Append(": ").AppendOdnTypeName(t);
+                        s_StrBld.Append(", ");
+                    }
+
+                    var parms = exportedFn.GetParameters();
+                    for (int i = 0; i < parms.Length; i++)
+                    {
+                        var p = parms[i];
+                        s_StrBld.Append(p.Name).Append(": ").AppendOdnTypeName(p.ParameterType);
+                        s_StrBld.Append(", ");
+                    }
+
+                    s_StrBld.Append(")");
+                    if (exportedFn.ReturnType != typeof(void))
+                        s_StrBld.Append(" -> ").AppendOdnTypeName(exportedFn.ReturnType);
+
+                    s_StrBld.AppendLine().AppendLine();
+                }
+
+                // delegate global var
+                {
+                    s_StrBld
+                        .AppendIndent()
+                        .AppendLine("@(private = \"file\")")
+                        .AppendIndent()
+                        .AppendLine($"odntrop_dydel_{tyName}_{exportedFn.Name}: odntrop_del_{tyName}_{exportedFn.Name} = nil")
+                        .AppendLine();
+                }
+
+                // delegate setter (called by C# to register the implementation)
+                {
+                    s_StrBld
+                        .AppendIndent()
+                        .AppendLine("@(export, private = \"file\")")
+                        .AppendIndent()
+                        .AppendLine($"odntrop_export_setter_{tyName}_{exportedFn.Name} :: proc (value: odntrop_del_{tyName}_{exportedFn.Name}) {{");
+
+                    s_StrBldIndent++;
+                    s_StrBld
+                        .AppendIndent()
+                        .AppendLine($"odntrop_dydel_{tyName}_{exportedFn.Name} = value");
+                    s_StrBldIndent--;
+                    s_StrBld.AppendIndent().AppendLine("}").AppendLine();
+                }
+
+                // user-facing Odin wrapper function
+                {
+                    if (exportedFn.Name.StartsWith("UnityOdnTropInternal"))
+                    {
+                        s_StrBld
+                            .AppendIndent()
+                            .AppendLine("@(private = \"file\")");
+                    }
+
+                    s_StrBld
+                        .AppendIndent()
+                        .Append($"{cleanTyName}{underScoreIfCleanTyName}{exportedFn.Name} :: proc(");
+
+                    if (!exportedFn.IsStatic)
+                    {
+                        s_StrBld.Append(instName).Append(": ").AppendOdnTypeName(t);
+                        s_StrBld.Append(", ");
+                    }
+
+                    var parms = exportedFn.GetParameters();
+                    for (int i = 0; i < parms.Length; i++)
+                    {
+                        var p = parms[i];
+                        s_StrBld.Append(p.Name).Append(": ").AppendOdnTypeName(p.ParameterType);
+                        if (p.HasDefaultValue)
+                        {
+                            static bool HandleDefaultValue<T>(StringBuilder sb, ParameterInfo p)
+                            {
+                                if (p.ParameterType != typeof(T))
+                                    return false;
+
+                                var val = (T)p.DefaultValue;
+                                var str = val.ToString().ToLowerInvariant();
+                                if (str == "-infinity")
+                                    str = "f32(0hFF80_0000)";
+                                else if (str == "infinity" || str == "+infinity")
+                                    str = "f32(0h7F80_0000)";
+
+                                sb.Append(" = ").Append(str);
+                                return true;
+                            }
+
+                            if (p.ParameterType == typeof(Allocator))
+                            {
+                                s_StrBld.Append(" = context.allocator");
+                            }
+                            else if (false ||
+                                    HandleDefaultValue<bool>(s_StrBld, p) ||
+                                    HandleDefaultValue<byte>(s_StrBld, p) ||
+                                    HandleDefaultValue<sbyte>(s_StrBld, p) ||
+                                    HandleDefaultValue<ushort>(s_StrBld, p) ||
+                                    HandleDefaultValue<short>(s_StrBld, p) ||
+                                    HandleDefaultValue<int>(s_StrBld, p) ||
+                                    HandleDefaultValue<uint>(s_StrBld, p) ||
+                                    HandleDefaultValue<long>(s_StrBld, p) ||
+                                    HandleDefaultValue<ulong>(s_StrBld, p) ||
+                                    HandleDefaultValue<float>(s_StrBld, p) ||
+                                    HandleDefaultValue<double>(s_StrBld, p) ||
+                                    false)
+                            {
+                            }
+                            else if (p.ParameterType == typeof(Quaternion))
+                            {
+                                s_StrBld.Append(" = quaternion128(1)");
+                            }
+                            else if (p.ParameterType.IsEnum)
+                            {
+                                s_StrBld.Append(" = .").Append(p.DefaultValue.ToString());
+                            }
+                            else
+                            {
+                                s_StrBld.Append(" = {}");
+                            }
+                        }
+                        s_StrBld.Append(", ");
+                    }
+
+                    s_StrBld.Append(")");
+                    if (exportedFn.ReturnType != typeof(void))
+                        s_StrBld.Append(" -> ").AppendOdnTypeName(exportedFn.ReturnType);
+
+                    s_StrBld.AppendLine(" {");
+                    s_StrBldIndent++;
+                    s_StrBld
+                        .AppendIndent()
+                        .AppendLine("odntrop_internal_tempCtx := G_OdnTrop_Internal_Ctx")
+                        .AppendIndent()
+                        .AppendLine("G_OdnTrop_Internal_Ctx = context")
+                        .AppendIndent()
+                        .AppendLine("defer G_OdnTrop_Internal_Ctx = odntrop_internal_tempCtx");
+
+                    if (exportedFn.ReturnType != typeof(void))
+                    {
+                        s_StrBld
+                            .AppendIndent()
+                            .Append("odntrop_internal_RetValXXX: ")
+                            .AppendOdnTypeName(exportedFn.ReturnType)
+                            .AppendLine();
+                    }
+
+                    s_StrBld
+                        .AppendIndent()
+                        .AppendLine($"if odntrop_dydel_{tyName}_{exportedFn.Name} != nil {{");
+
+                    s_StrBldIndent++;
+
+                    s_StrBld.AppendIndent();
+                    if (exportedFn.ReturnType != typeof(void))
+                        s_StrBld.Append("odntrop_internal_RetValXXX = ");
+                    s_StrBld.Append($"odntrop_dydel_{tyName}_{exportedFn.Name}(");
+
+                    if (!exportedFn.IsStatic)
+                    {
+                        s_StrBld.Append(instName);
+                        s_StrBld.Append(", ");
+                    }
+
+                    for (int i = 0; i < parms.Length; i++)
+                    {
+                        var p = parms[i];
+                        s_StrBld.Append(p.Name);
+                        s_StrBld.Append(", ");
+                    }
+
+                    s_StrBld.AppendLine(")");
+                    s_StrBldIndent--;
+                    s_StrBld
+                        .AppendIndent()
+                        .AppendLine("}");
+
+                    if (exportedFn.ReturnType != typeof(void))
+                    {
+                        s_StrBld
+                            .AppendIndent()
+                            .AppendLine("return odntrop_internal_RetValXXX");
+                    }
+
+                    s_StrBldIndent--;
+                    s_StrBld.AppendIndent().AppendLine("}").AppendLine();
+                }
+            }
+
+            if (!string.IsNullOrWhiteSpace(odinSrcAppend))
+                s_StrBld.AppendLine(odinSrcAppend);
+
+            File.WriteAllText(tgtFile, s_StrBld.ToString());
+        }
+
+        private static void GenerateImportOdinCode(Type t, string odinSrcAppend)
         {
             var tyName = t.FullName.Replace('+', '.').Replace('.', '_');
             var cleanTyName = (tyName == "OdinInterop_EngineBindings" || tyName == "OdinInterop_EngineBindingsImports") ? "" : tyName;
             var underScoreIfCleanTyName = cleanTyName == "" ? "" : "_";
             var className = t.Name;
             var instName = $"_{className}";
-            
-            MethodInfo[] exportedFns, importedFns;
 
-            if (mode == InteropMode.Export)
+            var importedFns = t.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                .Where(x => !x.Name.StartsWith("odntrop_"))
+                .ToArray();
+
+            if (importedFns.Length == 0)
+                return;
+
+            Debug.Log($"[Odin Interop] Generating import bindings for {t.FullName}: {importedFns.Length} imported functions");
+
+            var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, $"import_{tyName}.odin"));
+
+            s_StrBld
+                .Clear()
+                .AppendLine("// THIS IS A GENERATED FILE - DO NOT MODIFY OR YOUR CHANGES WILL BE LOST!")
+                .AppendLine("#+vet !tabs !unused !style")
+                .AppendLine("package src")
+                .AppendLine()
+                .AppendLine("@require import \"base:runtime\"")
+                .AppendLine();
+
+            foreach (var importedFn in importedFns)
             {
-                exportedFns = t.GetMethods(BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly).Where(x => !x.Name.StartsWith("odntrop_")).ToArray();
-                importedFns = Array.Empty<MethodInfo>();
-            }
-            else // Import
-            {
-                exportedFns = Array.Empty<MethodInfo>();
-                importedFns = t.GetMethods(BindingFlags.Public | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly).Where(x => !x.Name.StartsWith("odntrop_")).ToArray();
-            }
+                if (!importedFn.IsStatic)
+                    Debug.LogWarning($"parsing nonstatic imported {tyName} {importedFn}");
 
-            Debug.Log($"[Odin Interop] Generating bindings for {t.FullName}: {exportedFns.Length} exported functions, {importedFns.Length} imported functions");
+                // Read original Odin type info (generated by Odin2Cs)
+                var foreignDecl = importedFn.GetCustomAttribute<ForeignDeclAttribute>();
 
-            {
-                var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, $"odntrop_{tyName}.odin"));
+                // Resolve Odin type name for a param or return, preferring original Odin type
+                string OdinParamType(int i) =>
+                    foreignDecl?.ParamTypes != null && i < foreignDecl.ParamTypes.Length
+                        ? foreignDecl.ParamTypes[i]
+                        : importedFn.GetParameters()[i].ParameterType.AppendOdnTypeNameToString();
 
-                s_StrBld
-                    .Clear()
-                    .AppendLine("// THIS IS A GENERATED FILE - DO NOT MODIFY OR YOUR CHANGES WILL BE LOST!")
-                    .AppendLine("#+vet !tabs !unused !style")
-                    .AppendLine("package src")
-                    .AppendLine()
-                    .AppendLine("@require import \"base:runtime\"");
+                string OdinReturnType() =>
+                    !string.IsNullOrEmpty(foreignDecl?.ReturnType)
+                        ? foreignDecl.ReturnType
+                        : (importedFn.ReturnType != typeof(void) ? importedFn.ReturnType.AppendOdnTypeNameToString() : null);
 
-                if (t == typeof(EngineBindings))
+                // delegate signature type for the Odin-internal implementation
                 {
-                    // in case need to add any special imports
-                }
+                    if (importedFn.Name.StartsWith("UnityOdnTropInternal"))
+                    {
+                        s_StrBld
+                            .AppendIndent()
+                            .AppendLine("@(private = \"file\")");
+                    }
 
-                s_StrBld.AppendLine();
+                    s_StrBld
+                        .AppendIndent()
+                        .Append($"{cleanTyName}{underScoreIfCleanTyName}{importedFn.Name}Delegate :: #type proc(");
 
-                foreach (var importedFn in importedFns)
-                {
                     if (!importedFn.IsStatic)
                     {
-                        Debug.LogWarning($"parsing nonstatic imported {tyName} {importedFn}");
+                        s_StrBld.Append(instName).Append(": ").AppendOdnTypeName(t);
+                        s_StrBld.Append(", ");
                     }
-                    
-                    // signature so user can stick to the signature
+
+                    var parms = importedFn.GetParameters();
+                    for (int i = 0; i < parms.Length; i++)
                     {
-                        if (importedFn.Name.StartsWith("UnityOdnTropInternal"))
-                        {
-                            // internal stuff
-                            s_StrBld
-                                .AppendIndent()
-                                .AppendLine("@(private = \"file\")");
-                        }
-
-                        s_StrBld
-                            .AppendIndent()
-                            .Append($"{cleanTyName}{underScoreIfCleanTyName}{importedFn.Name}Delegate :: #type proc(");
-
-                        if (!importedFn.IsStatic) {
-                            s_StrBld.Append(instName).Append(": ").AppendOdnTypeName(t);
-                            s_StrBld.Append(", ");
-                        }
-
-                        var parms = importedFn.GetParameters();
-                        for (int i = 0; i < parms.Length; i++)
-                        {
-                            var p = parms[i];
-                            s_StrBld.Append(p.Name).Append(": ").AppendOdnTypeName(p.ParameterType);
-                            s_StrBld.Append(", ");
-                        }
-
-                        s_StrBld.Append(")");
-                        if (importedFn.ReturnType != typeof(void))
-                        {
-                            s_StrBld.Append(" -> ").AppendOdnTypeName(importedFn.ReturnType);
-                        }
-
-                        s_StrBld.AppendLine().AppendLine();
+                        var p = parms[i];
+                        s_StrBld.Append(p.Name).Append(": ").Append(OdinParamType(i));
+                        s_StrBld.Append(", ");
                     }
 
-                    // exported p/invoke wrapper
-                    {
-                        s_StrBld
-                            .AppendIndent()
-                            .AppendLine("@(export, private = \"file\")")
-                            .AppendIndent()
-                            .Append($"odntrop_export_{tyName}_{importedFn.Name} :: proc \"c\" (");
+                    s_StrBld.Append(")");
+                    var returnType = OdinReturnType();
+                    if (returnType != null)
+                        s_StrBld.Append(" -> ").Append(returnType);
 
-                        if (!importedFn.IsStatic) {
-                            s_StrBld.Append(instName).Append(": ").AppendOdnTypeName(t);
-                            s_StrBld.Append(", ");
-                        }
-                        
-
-                        var parms = importedFn.GetParameters();
-                        for (int i = 0; i < parms.Length; i++)
-                        {
-                            var p = parms[i];
-                            s_StrBld.Append(p.Name).Append(": ").AppendOdnTypeName(p.ParameterType);
-                            s_StrBld.Append(", ");
-                        }
-
-                        s_StrBld.Append(")");
-                        if (importedFn.ReturnType != typeof(void))
-                        {
-                            s_StrBld.Append(" -> ").AppendOdnTypeName(importedFn.ReturnType);
-                        }
-
-                        s_StrBld.AppendLine(" {");
-
-                        s_StrBldIndent++;
-                        s_StrBld
-                            .AppendIndent()
-                            .AppendLine("context = CreateUnityContext() if G_OdnTrop_Internal_CtxNesting == 0 else G_OdnTrop_Internal_Ctx")
-                            .AppendIndent()
-                            .AppendLine("G_OdnTrop_Internal_CtxNesting += 1")
-                            .AppendIndent()
-                            .AppendLine("defer G_OdnTrop_Internal_CtxNesting -= 1")
-                            .AppendIndent()
-                            .Append(importedFn.ReturnType == typeof(void) ? "" : "return ")
-                            .Append($"{cleanTyName}{underScoreIfCleanTyName}{importedFn.Name}(");
-
-                        if (!importedFn.IsStatic) {
-                            s_StrBld.Append(instName);
-                            s_StrBld.Append(", ");
-
-                        }
-
-
-
-                        for (int i = 0; i < parms.Length; i++)
-                        {
-                            var p = parms[i];
-                            s_StrBld.Append(p.Name);
-                            s_StrBld.Append(", ");
-                        }
-
-                        s_StrBld.AppendLine(")");
-
-                        s_StrBldIndent--;
-                        s_StrBld.AppendIndent().AppendLine("}").AppendLine();
-                    }
+                    s_StrBld.AppendLine().AppendLine();
                 }
 
-                foreach (var exportedFn in exportedFns)
+                // exported C-callable wrapper (called by C# via DLL import)
                 {
-                    
-                    // signature
+                    var implName = foreignDecl?.OdinName
+                        ?? $"{cleanTyName}{underScoreIfCleanTyName}{importedFn.Name}";
+
+                    s_StrBld
+                        .AppendIndent()
+                        .AppendLine("@(export, private = \"file\")")
+                        .AppendIndent()
+                        .Append($"odntrop_export_{tyName}_{importedFn.Name} :: proc \"c\" (");
+
+                    if (!importedFn.IsStatic)
                     {
-                        s_StrBld
-                            .AppendIndent()
-                            .AppendLine("@(private = \"file\")")
-                            .AppendIndent()
-                            .Append($"odntrop_del_{tyName}_{exportedFn.Name} :: #type proc \"c\" (");
-
-                        if (!exportedFn.IsStatic) {
-                            s_StrBld.Append(instName).Append(": ").AppendOdnTypeName(t);
-                            s_StrBld.Append(", ");
-                        }
-                    
-                        var parms = exportedFn.GetParameters();
-                        for (int i = 0; i < parms.Length; i++)
-                        {
-                            var p = parms[i];
-                            s_StrBld.Append(p.Name).Append(": ").AppendOdnTypeName(p.ParameterType);
-                            s_StrBld.Append(", ");
-                        }
-
-                        s_StrBld.Append(")");
-                        if (exportedFn.ReturnType != typeof(void))
-                        {
-                            s_StrBld.Append(" -> ").AppendOdnTypeName(exportedFn.ReturnType);
-                        }
-
-                        s_StrBld.AppendLine().AppendLine();
+                        s_StrBld.Append(instName).Append(": ").AppendOdnTypeName(t);
+                        s_StrBld.Append(", ");
                     }
 
-                    // signature global var
+                    var parms = importedFn.GetParameters();
+                    for (int i = 0; i < parms.Length; i++)
                     {
-                        s_StrBld
-                            .AppendIndent()
-                            .AppendLine("@(private = \"file\")")
-                            .AppendIndent()
-                            .AppendLine($"odntrop_dydel_{tyName}_{exportedFn.Name}: odntrop_del_{tyName}_{exportedFn.Name} = nil")
-                            .AppendLine();
+                        var p = parms[i];
+                        s_StrBld.Append(p.Name).Append(": ").Append(OdinParamType(i));
+                        s_StrBld.Append(", ");
                     }
 
-                    // global var setter fn
-                    {
-                        s_StrBld
-                            .AppendIndent()
-                            .AppendLine("@(export, private = \"file\")")
-                            .AppendIndent()
-                            .AppendLine($"odntrop_export_setter_{tyName}_{exportedFn.Name} :: proc (value: odntrop_del_{tyName}_{exportedFn.Name}) {{");
+                    s_StrBld.Append(")");
+                    var returnType = OdinReturnType();
+                    if (returnType != null)
+                        s_StrBld.Append(" -> ").Append(returnType);
 
-                        s_StrBldIndent++;
-                        s_StrBld
-                            .AppendIndent()
-                            .AppendLine($"odntrop_dydel_{tyName}_{exportedFn.Name} = value");
-                        s_StrBldIndent--;
-                        s_StrBld.AppendIndent().AppendLine("}").AppendLine();
+                    s_StrBld.AppendLine(" {");
+
+                    s_StrBldIndent++;
+                    s_StrBld
+                        .AppendIndent()
+                        .AppendLine("context = CreateUnityContext() if G_OdnTrop_Internal_CtxNesting == 0 else G_OdnTrop_Internal_Ctx")
+                        .AppendIndent()
+                        .AppendLine("G_OdnTrop_Internal_CtxNesting += 1")
+                        .AppendIndent()
+                        .AppendLine("defer G_OdnTrop_Internal_CtxNesting -= 1")
+                        .AppendIndent()
+                        .Append(importedFn.ReturnType == typeof(void) ? "" : "return ")
+                        .Append(implName)
+                        .Append("(");
+
+                    if (!importedFn.IsStatic)
+                    {
+                        s_StrBld.Append(instName);
+                        s_StrBld.Append(", ");
                     }
 
-                    // actual function that the fucking user can call
+                    for (int i = 0; i < parms.Length; i++)
                     {
-                        if (exportedFn.Name.StartsWith("UnityOdnTropInternal"))
-                        {
-                            // internal stuff
-                            s_StrBld
-                                .AppendIndent()
-                                .AppendLine("@(private = \"file\")");
-                        }
-
-                        s_StrBld
-                            .AppendIndent()
-                            .Append($"{cleanTyName}{underScoreIfCleanTyName}{exportedFn.Name} :: proc(");
-
-                        if (!exportedFn.IsStatic) {
-                            s_StrBld.Append(instName).Append(": ").AppendOdnTypeName(t);
-                            s_StrBld.Append(", ");
-                        }
-
-                        var parms = exportedFn.GetParameters();
-                        for (int i = 0; i < parms.Length; i++)
-                        {
-                            var p = parms[i];
-                            s_StrBld.Append(p.Name).Append(": ").AppendOdnTypeName(p.ParameterType);
-                            if (p.HasDefaultValue)
-                            {
-                                static bool HandleDefaultValue<T>(StringBuilder sb, ParameterInfo p)
-                                {
-                                    if (p.ParameterType != typeof(T))
-                                        return false;
-
-                                    var val = (T)p.DefaultValue;
-                                    var str = val.ToString().ToLowerInvariant();
-                                    if (str == "-infinity")
-                                        str = "f32(0hFF80_0000)";
-                                    else if (str == "infinity" || str == "+infinity")
-                                        str = "f32(0h7F80_0000)";
-
-                                    sb.Append(" = ").Append(str);
-                                    return true;
-                                }
-
-                                if (p.ParameterType == typeof(Allocator))
-                                {
-                                    s_StrBld.Append(" = context.allocator");
-                                }
-                                else if (false ||
-                                        HandleDefaultValue<bool>(s_StrBld, p) ||
-                                        HandleDefaultValue<byte>(s_StrBld, p) ||
-                                        HandleDefaultValue<sbyte>(s_StrBld, p) ||
-                                        HandleDefaultValue<ushort>(s_StrBld, p) ||
-                                        HandleDefaultValue<short>(s_StrBld, p) ||
-                                        HandleDefaultValue<int>(s_StrBld, p) ||
-                                        HandleDefaultValue<uint>(s_StrBld, p) ||
-                                        HandleDefaultValue<long>(s_StrBld, p) ||
-                                        HandleDefaultValue<ulong>(s_StrBld, p) ||
-                                        HandleDefaultValue<float>(s_StrBld, p) ||
-                                        HandleDefaultValue<double>(s_StrBld, p) ||
-                                        false)
-                                {
-                                }
-                                else if (p.ParameterType == typeof(Quaternion))
-                                {
-                                    s_StrBld.Append(" = quaternion128(1)");
-                                }
-                                else if (p.ParameterType.IsEnum)
-                                {
-                                    s_StrBld.Append(" = .").Append(p.DefaultValue.ToString());
-                                }
-                                else
-                                {
-                                    s_StrBld.Append(" = {}");
-                                }
-                            }
-                            s_StrBld.Append(", ");
-                        }
-
-                        s_StrBld.Append(")");
-                        if (exportedFn.ReturnType != typeof(void))
-                        {
-                            s_StrBld.Append(" -> ").AppendOdnTypeName(exportedFn.ReturnType);
-                        }
-
-                        s_StrBld.AppendLine(" {");
-                        s_StrBldIndent++;
-                        s_StrBld
-                            .AppendIndent()
-                            .AppendLine("odntrop_internal_tempCtx := G_OdnTrop_Internal_Ctx")
-                            .AppendIndent()
-                            .AppendLine("G_OdnTrop_Internal_Ctx = context")
-                            .AppendIndent()
-                            .AppendLine("defer G_OdnTrop_Internal_Ctx = odntrop_internal_tempCtx");
-
-                        if (exportedFn.ReturnType != typeof(void))
-                        {
-                            s_StrBld
-                                .AppendIndent()
-                                .Append("odntrop_internal_RetValXXX: ")
-                                .AppendOdnTypeName(exportedFn.ReturnType)
-                                .AppendLine();
-                        }
-
-                        s_StrBld
-                            .AppendIndent()
-                            .AppendLine($"if odntrop_dydel_{tyName}_{exportedFn.Name} != nil {{");
-
-                        s_StrBldIndent++;
-
-                        s_StrBld.AppendIndent();
-                        if (exportedFn.ReturnType != typeof(void))
-                            s_StrBld.Append("odntrop_internal_RetValXXX = ");
-                        s_StrBld.Append($"odntrop_dydel_{tyName}_{exportedFn.Name}(");
-
-                        if (!exportedFn.IsStatic) {
-                            s_StrBld.Append(instName);
-                            s_StrBld.Append(", ");
-                        }
-
-                        for (int i = 0; i < parms.Length; i++)
-                        {
-                            var p = parms[i];
-                            s_StrBld.Append(p.Name);
-                            s_StrBld.Append(", ");
-                        }
-
-                        s_StrBld.AppendLine(")");
-                        s_StrBldIndent--;
-                        s_StrBld
-                            .AppendIndent()
-                            .AppendLine("}");
-
-                        if (exportedFn.ReturnType != typeof(void))
-                        {
-                            s_StrBld
-                                .AppendIndent()
-                                .AppendLine("return odntrop_internal_RetValXXX");
-                        }
-
-                        s_StrBldIndent--;
-                        s_StrBld.AppendIndent().AppendLine("}").AppendLine();
+                        var p = parms[i];
+                        s_StrBld.Append(p.Name);
+                        s_StrBld.Append(", ");
                     }
+
+                    s_StrBld.AppendLine(")");
+
+                    s_StrBldIndent--;
+                    s_StrBld.AppendIndent().AppendLine("}").AppendLine();
                 }
-
-                if (!string.IsNullOrWhiteSpace(odinSrcAppend))
-                    s_StrBld.AppendLine(odinSrcAppend);
-
-                File.WriteAllText(tgtFile, s_StrBld.ToString());
             }
+
+            if (!string.IsNullOrWhiteSpace(odinSrcAppend))
+                s_StrBld.AppendLine(odinSrcAppend);
+
+            File.WriteAllText(tgtFile, s_StrBld.ToString());
         }
 
         private static HashSet<Type> s_HandledTypes = new HashSet<Type>(256);
@@ -835,6 +867,13 @@ namespace OdinInterop.Editor
             }
 
             return sb;
+        }
+
+        private static string AppendOdnTypeNameToString(this Type t)
+        {
+            var sb = new StringBuilder();
+            sb.AppendOdnTypeName(t);
+            return sb.ToString();
         }
     }
 }
