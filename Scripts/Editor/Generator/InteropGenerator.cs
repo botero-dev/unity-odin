@@ -210,7 +210,7 @@ namespace OdinInterop.Editor
 
             Debug.Log($"[Odin Interop] Generating export bindings for {t.FullName}: {exportedFns.Length} exported functions");
 
-            var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, $"export_{tyName}.odin"));
+            var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, $"export_{tyName}_impl.odin"));
 
             s_StrBld
                 .Clear()
@@ -280,16 +280,9 @@ namespace OdinInterop.Editor
 
                 // user-facing Odin wrapper function
                 {
-                    if (exportedFn.Name.StartsWith("UnityOdnTropInternal"))
-                    {
-                        s_StrBld
-                            .AppendIndent()
-                            .AppendLine("@(private = \"file\")");
-                    }
-
                     s_StrBld
                         .AppendIndent()
-                        .Append($"{cleanTyName}{underScoreIfCleanTyName}{exportedFn.Name} :: proc(");
+                        .Append($"{cleanTyName}{underScoreIfCleanTyName}{exportedFn.Name}_impl :: proc(");
 
                     if (!exportedFn.IsStatic)
                     {
@@ -424,6 +417,73 @@ namespace OdinInterop.Editor
                 s_StrBld.AppendLine(odinSrcAppend);
 
             File.WriteAllText(tgtFile, s_StrBld.ToString());
+
+            // Generate decl file — forwarding wrappers to _impl
+            {
+                var declFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_OUT_DIR, $"export_{tyName}.odin"));
+                s_StrBld
+                    .Clear()
+                    .AppendLine("// THIS IS A GENERATED FILE - DO NOT MODIFY OR YOUR CHANGES WILL BE LOST!")
+                    .AppendLine("#+vet !tabs !unused !style")
+                    .AppendLine("package src")
+                    .AppendLine()
+                    .AppendLine("@require import \"base:runtime\"")
+                    .AppendLine();
+
+                foreach (var exportedFn in exportedFns)
+                {
+                    var parms = exportedFn.GetParameters();
+
+                    s_StrBld
+                        .AppendIndent()
+                        .Append($"{cleanTyName}{underScoreIfCleanTyName}{exportedFn.Name} :: #force_inline proc(");
+
+                    if (!exportedFn.IsStatic)
+                    {
+                        s_StrBld.Append(instName).Append(": ").AppendOdnTypeName(t);
+                        s_StrBld.Append(", ");
+                    }
+
+                    for (int i = 0; i < parms.Length; i++)
+                    {
+                        var p = parms[i];
+                        s_StrBld.Append(p.Name).Append(": ").AppendOdnTypeName(p.ParameterType);
+                        s_StrBld.Append(", ");
+                    }
+
+                    s_StrBld.Append(")");
+                    if (exportedFn.ReturnType != typeof(void))
+                        s_StrBld.Append(" -> ").AppendOdnTypeName(exportedFn.ReturnType);
+
+                    s_StrBld.AppendLine(" {");
+                    s_StrBldIndent++;
+
+                    s_StrBld.AppendIndent();
+                    if (exportedFn.ReturnType != typeof(void))
+                        s_StrBld.Append("return ");
+                    s_StrBld.Append($"{cleanTyName}{underScoreIfCleanTyName}{exportedFn.Name}_impl(");
+
+                    if (!exportedFn.IsStatic)
+                    {
+                        s_StrBld.Append(instName);
+                        s_StrBld.Append(", ");
+                    }
+
+                    for (int i = 0; i < parms.Length; i++)
+                    {
+                        var p = parms[i];
+                        s_StrBld.Append(p.Name);
+                        s_StrBld.Append(", ");
+                    }
+
+                    s_StrBld.AppendLine(")");
+
+                    s_StrBldIndent--;
+                    s_StrBld.AppendIndent().AppendLine("}").AppendLine();
+                }
+
+                File.WriteAllText(declFile, s_StrBld.ToString());
+            }
         }
 
         private static void GenerateImportOdinCode(Type t, string odinSrcAppend)
