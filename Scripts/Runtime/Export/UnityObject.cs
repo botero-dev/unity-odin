@@ -5,89 +5,64 @@ namespace OdinInterop
     [OdinExport]
     internal static unsafe partial class UnityObject
     {
-        // Object API
-
-        private static bool IsObjectOfType(ObjectHandle<Object> obj, String8 typeName)
+        private static bool IsOfType(ObjectHandle<Object> obj, String8 typeName)
         {
             if (!obj) return false;
-
             var type = BindingsHelper.GetCachedType(typeName);
             if (type == null) return false;
-
             return type.IsAssignableFrom(obj.value.GetType());
         }
 
-        private static HideFlags GetObjectHideFlags(ObjectHandle<Object> obj)
+        private static HideFlags GetHideFlags(ObjectHandle<Object> obj)
+            => obj ? obj.value.hideFlags : HideFlags.None;
+
+        private static void SetHideFlags(ObjectHandle<Object> obj, HideFlags flags)
         {
-            return obj ? obj.value.hideFlags : HideFlags.None;
+            if (obj) obj.value.hideFlags = flags;
         }
 
-        private static void SetObjectHideFlags(ObjectHandle<Object> obj, HideFlags flags)
+        private static String8 GetName(ObjectHandle<Object> obj, Allocator allocator)
+            => obj ? new String8(obj.value.name, allocator) : default;
+
+        private static void SetName(ObjectHandle<Object> obj, String8 name)
         {
-            if (obj)
-                obj.value.hideFlags = flags;
+            if (obj) obj.value.name = name.ToString();
         }
 
-        private static String8 GetObjectName(ObjectHandle<Object> obj, Allocator allocator)
+        private static void Destroy(ObjectHandle<Object> obj)
         {
-            if (!obj) return default;
-
-            return new String8(obj.value.name, allocator);
+            if (obj) Object.Destroy(obj.value);
         }
 
-        private static void SetObjectName(ObjectHandle<Object> obj, String8 name)
+        private static void DestroyImmediate(ObjectHandle<Object> obj, bool allowDestroyingAssets = default)
         {
-            if (obj)
-                obj.value.name = name.ToString();
+            if (obj) Object.DestroyImmediate(obj.value, allowDestroyingAssets);
         }
 
-        private static void DestroyObject(ObjectHandle<Object> obj)
+        private static void DontDestroyOnLoad(ObjectHandle<Object> obj)
         {
-            if (obj)
-                Object.Destroy(obj.value);
+            if (obj) Object.DontDestroyOnLoad(obj.value);
         }
 
-        private static void DestroyObjectImmediate(ObjectHandle<Object> obj, bool allowDestroyingAssets = default)
-        {
-            if (obj)
-                Object.DestroyImmediate(obj.value, allowDestroyingAssets);
-        }
-
-        private static void DontDestroyObjectOnLoad(ObjectHandle<Object> obj)
-        {
-            if (obj)
-                Object.DontDestroyOnLoad(obj.value);
-        }
-
-        private static ObjectHandle<Object> InstantiateObjectWithoutTransform(
+        private static ObjectHandle<Object> InstantiateWithoutTransform(
             ObjectHandle<Object> original,
             ObjectHandle<Transform> parent = default,
-            bool instantiateInWorldSpace = default
-        )
+            bool instantiateInWorldSpace = default)
         {
-            if (!original)
-                return default;
-
-            if (parent)
-                return Object.Instantiate(original, parent, instantiateInWorldSpace);
-            else
-                return Object.Instantiate(original);
+            if (!original) return default;
+            if (parent) return Object.Instantiate(original, parent, instantiateInWorldSpace);
+            return Object.Instantiate(original);
         }
 
-        private static ObjectHandle<Object> InstantiateObjectWithTransform(
+        private static ObjectHandle<Object> InstantiateWithTransform(
             ObjectHandle<Object> original,
             Vector3 position,
             Quaternion rotation,
-            ObjectHandle<Transform> parent = default
-        )
+            ObjectHandle<Transform> parent = default)
         {
-            if (!original)
-                return default;
-
-            if (parent)
-                return Object.Instantiate(original, position, rotation, parent);
-            else
-                return Object.Instantiate(original, position, rotation);
+            if (!original) return default;
+            if (parent) return Object.Instantiate(original, position, rotation, parent);
+            return Object.Instantiate(original, position, rotation);
         }
     }
 }

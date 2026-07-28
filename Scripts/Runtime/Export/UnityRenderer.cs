@@ -8,27 +8,27 @@ namespace OdinInterop
     {
         // Renderer API
 
-        private static bool IsRendererEnabled(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.enabled : false;
-        private static void SetRendererEnabled(ObjectHandle<Renderer> renderer, bool enabled)
+        private static bool IsEnabled(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.enabled : false;
+        private static void SetEnabled(ObjectHandle<Renderer> renderer, bool enabled)
         {
             if (renderer)
                 renderer.value.enabled = enabled;
         }
-        private static bool IsRendererVisible(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.isVisible : false;
-        private static Bounds GetRendererBounds(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.bounds : default;
-        private static ObjectHandle<Material> GetRendererMaterial(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.material : default;
-        private static void SetRendererMaterial(ObjectHandle<Renderer> renderer, ObjectHandle<Material> material)
+        private static bool IsVisible(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.isVisible : false;
+        private static Bounds GetBounds(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.bounds : default;
+        private static ObjectHandle<Material> GetMaterial(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.material : default;
+        private static void SetMaterial(ObjectHandle<Renderer> renderer, ObjectHandle<Material> material)
         {
             if (renderer)
                 renderer.value.material = material;
         }
-        private static ObjectHandle<Material> GetRendererSharedMaterial(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.sharedMaterial : default;
-        private static void SetRendererSharedMaterial(ObjectHandle<Renderer> renderer, ObjectHandle<Material> material)
+        private static ObjectHandle<Material> GetSharedMaterial(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.sharedMaterial : default;
+        private static void SetSharedMaterial(ObjectHandle<Renderer> renderer, ObjectHandle<Material> material)
         {
             if (renderer)
                 renderer.value.sharedMaterial = material;
         }
-        private static Slice<ObjectHandle<Material>> GetRendererMaterials(ObjectHandle<Renderer> renderer, Allocator allocator)
+        private static Slice<ObjectHandle<Material>> GetMaterials(ObjectHandle<Renderer> renderer, Allocator allocator)
         {
             if (!renderer)
                 return default;
@@ -40,7 +40,7 @@ namespace OdinInterop
             BindingsHelper.tempMaterialsList.Clear();
             return slice;
         }
-        private static void SetRendererMaterials(ObjectHandle<Renderer> renderer, Slice<ObjectHandle<Material>> materials)
+        private static void SetMaterials(ObjectHandle<Renderer> renderer, Slice<ObjectHandle<Material>> materials)
         {
             if (!renderer)
                 return;
@@ -50,7 +50,7 @@ namespace OdinInterop
             renderer.value.SetMaterials(BindingsHelper.tempMaterialsList);
             BindingsHelper.tempMaterialsList.Clear();
         }
-        private static Slice<ObjectHandle<Material>> GetRendererSharedMaterials(ObjectHandle<Renderer> renderer, Allocator allocator)
+        private static Slice<ObjectHandle<Material>> GetSharedMaterials(ObjectHandle<Renderer> renderer, Allocator allocator)
         {
             if (!renderer)
                 return default;
@@ -62,7 +62,7 @@ namespace OdinInterop
             BindingsHelper.tempMaterialsList.Clear();
             return slice;
         }
-        private static void SetRendererSharedMaterials(ObjectHandle<Renderer> renderer, Slice<ObjectHandle<Material>> materials)
+        private static void SetSharedMaterials(ObjectHandle<Renderer> renderer, Slice<ObjectHandle<Material>> materials)
         {
             if (!renderer)
                 return;
@@ -72,32 +72,32 @@ namespace OdinInterop
             renderer.value.SetSharedMaterials(BindingsHelper.tempMaterialsList);
             BindingsHelper.tempMaterialsList.Clear();
         }
-        private static int GetRendererSortingLayerID(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.sortingLayerID : 0;
-        private static void SetRendererSortingLayerID(ObjectHandle<Renderer> renderer, int layerID)
+        private static int GetSortingLayerID(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.sortingLayerID : 0;
+        private static void SetSortingLayerID(ObjectHandle<Renderer> renderer, int layerID)
         {
             if (renderer)
                 renderer.value.sortingLayerID = layerID;
         }
-        private static int GetRendererSortingOrder(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.sortingOrder : 0;
-        private static void SetRendererSortingOrder(ObjectHandle<Renderer> renderer, int order)
+        private static int GetSortingOrder(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.sortingOrder : 0;
+        private static void SetSortingOrder(ObjectHandle<Renderer> renderer, int order)
         {
             if (renderer)
                 renderer.value.sortingOrder = order;
         }
-        private static uint GetRendererRenderingLayerMask(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.renderingLayerMask : 0;
-        private static void SetRendererRenderingLayerMask(ObjectHandle<Renderer> renderer, uint mask)
+        private static uint GetRenderingLayerMask(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.renderingLayerMask : 0;
+        private static void SetRenderingLayerMask(ObjectHandle<Renderer> renderer, uint mask)
         {
             if (renderer)
                 renderer.value.renderingLayerMask = mask;
         }
-        private static bool GetRendererReceiveShadows(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.receiveShadows : false;
-        private static void SetRendererReceiveShadows(ObjectHandle<Renderer> renderer, bool receive)
+        private static bool GetReceiveShadows(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.receiveShadows : false;
+        private static void SetReceiveShadows(ObjectHandle<Renderer> renderer, bool receive)
         {
             if (renderer)
                 renderer.value.receiveShadows = receive;
         }
-        private static ShadowCastingMode GetRendererShadowCastingMode(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.shadowCastingMode : default;
-        private static void SetRendererShadowCastingMode(ObjectHandle<Renderer> renderer, ShadowCastingMode mode)
+        private static ShadowCastingMode GetShadowCastingMode(ObjectHandle<Renderer> renderer) => renderer ? renderer.value.shadowCastingMode : default;
+        private static void SetShadowCastingMode(ObjectHandle<Renderer> renderer, ShadowCastingMode mode)
         {
             if (renderer)
                 renderer.value.shadowCastingMode = mode;

@@ -7,62 +7,62 @@ using PhysicsMaterial = UnityEngine.PhysicMaterial;
 namespace OdinInterop
 {
     [OdinExport]
-    internal static unsafe partial class UnityCollider
+    internal static partial class UnityCollider
     {
         // Collider API
 
-        private static bool IsColliderEnabled(ObjectHandle<Collider> collider) => collider ? collider.value.enabled : false;
-        private static void SetColliderEnabled(ObjectHandle<Collider> collider, bool enabled)
+        private static bool IsEnabled(ObjectHandle<Collider> collider) => collider ? collider.value.enabled : false;
+        private static void SetEnabled(ObjectHandle<Collider> collider, bool enabled)
         {
             if (collider)
                 collider.value.enabled = enabled;
         }
-        private static bool IsColliderTrigger(ObjectHandle<Collider> collider) => collider ? collider.value.isTrigger : false;
-        private static void SetColliderTrigger(ObjectHandle<Collider> collider, bool isTrigger)
+        private static bool IsTrigger(ObjectHandle<Collider> collider) => collider ? collider.value.isTrigger : false;
+        private static void SetTrigger(ObjectHandle<Collider> collider, bool isTrigger)
         {
             if (collider)
                 collider.value.isTrigger = isTrigger;
         }
-        private static float GetColliderContactOffset(ObjectHandle<Collider> collider) => collider ? collider.value.contactOffset : 0f;
-        private static void SetColliderContactOffset(ObjectHandle<Collider> collider, float offset)
+        private static float GetContactOffset(ObjectHandle<Collider> collider) => collider ? collider.value.contactOffset : 0f;
+        private static void SetContactOffset(ObjectHandle<Collider> collider, float offset)
         {
             if (collider)
                 collider.value.contactOffset = offset;
         }
-        private static Bounds GetColliderBounds(ObjectHandle<Collider> collider) => collider ? collider.value.bounds : default;
-        private static ObjectHandle<PhysicsMaterial> GetColliderMaterial(ObjectHandle<Collider> collider) => collider ? collider.value.material : default;
-        private static void SetColliderMaterial(ObjectHandle<Collider> collider, ObjectHandle<PhysicsMaterial> material)
+        private static Bounds GetBounds(ObjectHandle<Collider> collider) => collider ? collider.value.bounds : default;
+        private static ObjectHandle<PhysicsMaterial> GetMaterial(ObjectHandle<Collider> collider) => collider ? collider.value.material : default;
+        private static void SetMaterial(ObjectHandle<Collider> collider, ObjectHandle<PhysicsMaterial> material)
         {
             if (collider)
                 collider.value.material = material;
         }
-        private static ObjectHandle<PhysicsMaterial> GetColliderSharedMaterial(ObjectHandle<Collider> collider) => collider ? collider.value.sharedMaterial : default;
-        private static void SetColliderSharedMaterial(ObjectHandle<Collider> collider, ObjectHandle<PhysicsMaterial> material)
+        private static ObjectHandle<PhysicsMaterial> GetSharedMaterial(ObjectHandle<Collider> collider) => collider ? collider.value.sharedMaterial : default;
+        private static void SetSharedMaterial(ObjectHandle<Collider> collider, ObjectHandle<PhysicsMaterial> material)
         {
             if (collider)
                 collider.value.sharedMaterial = material;
         }
-        private static Vector3 ClosestPointOnCollider(ObjectHandle<Collider> collider, Vector3 position) => collider ? collider.value.ClosestPoint(position) : position;
-        private static Vector3 ClosestPointOnColliderBounds(ObjectHandle<Collider> collider, Vector3 position) => collider ? collider.value.ClosestPointOnBounds(position) : position;
-        private static bool RaycastCollider(ObjectHandle<Collider> collider, Ray ray, out RaycastHit hitInfo, float maxDistance)
+        private static Vector3 ClosestPointOn(ObjectHandle<Collider> collider, Vector3 position) => collider ? collider.value.ClosestPoint(position) : position;
+        private static Vector3 ClosestPointOnBounds(ObjectHandle<Collider> collider, Vector3 position) => collider ? collider.value.ClosestPointOnBounds(position) : position;
+        private static bool Raycast(ObjectHandle<Collider> collider, Ray ray, out RaycastHit hitInfo, float maxDistance)
         {
             if (collider)
                 return collider.value.Raycast(ray, out hitInfo, maxDistance);
             hitInfo = default;
             return false;
         }
-        private static ObjectHandle<Rigidbody> GetColliderAttachedRigidbody(ObjectHandle<Collider> collider) => collider ? collider.value.attachedRigidbody : default;
+        private static ObjectHandle<Rigidbody> GetAttachedRigidbody(ObjectHandle<Collider> collider) => collider ? collider.value.attachedRigidbody : default;
 
         // BoxCollider API
 
-        private static Vector3 GetBoxColliderCenter(ObjectHandle<BoxCollider> boxCollider) => boxCollider ? boxCollider.value.center : default;
-        private static void SetBoxColliderCenter(ObjectHandle<BoxCollider> boxCollider, Vector3 center)
+        private static Vector3 GetBoxCenter(ObjectHandle<BoxCollider> boxCollider) => boxCollider ? boxCollider.value.center : default;
+        private static void SetBoxCenter(ObjectHandle<BoxCollider> boxCollider, Vector3 center)
         {
             if (boxCollider)
                 boxCollider.value.center = center;
         }
-        private static Vector3 GetBoxColliderSize(ObjectHandle<BoxCollider> boxCollider) => boxCollider ? boxCollider.value.size : default;
-        private static void SetBoxColliderSize(ObjectHandle<BoxCollider> boxCollider, Vector3 size)
+        private static Vector3 GetBoxSize(ObjectHandle<BoxCollider> boxCollider) => boxCollider ? boxCollider.value.size : default;
+        private static void SetBoxSize(ObjectHandle<BoxCollider> boxCollider, Vector3 size)
         {
             if (boxCollider)
                 boxCollider.value.size = size;
@@ -70,14 +70,14 @@ namespace OdinInterop
 
         // SphereCollider API
 
-        private static Vector3 GetSphereColliderCenter(ObjectHandle<SphereCollider> sphereCollider) => sphereCollider ? sphereCollider.value.center : default;
-        private static void SetSphereColliderCenter(ObjectHandle<SphereCollider> sphereCollider, Vector3 center)
+        private static Vector3 GetSphereCenter(ObjectHandle<SphereCollider> sphereCollider) => sphereCollider ? sphereCollider.value.center : default;
+        private static void SetSphereCenter(ObjectHandle<SphereCollider> sphereCollider, Vector3 center)
         {
             if (sphereCollider)
                 sphereCollider.value.center = center;
         }
-        private static float GetSphereColliderRadius(ObjectHandle<SphereCollider> sphereCollider) => sphereCollider ? sphereCollider.value.radius : 0f;
-        private static void SetSphereColliderRadius(ObjectHandle<SphereCollider> sphereCollider, float radius)
+        private static float GetSphereRadius(ObjectHandle<SphereCollider> sphereCollider) => sphereCollider ? sphereCollider.value.radius : 0f;
+        private static void SetSphereRadius(ObjectHandle<SphereCollider> sphereCollider, float radius)
         {
             if (sphereCollider)
                 sphereCollider.value.radius = radius;
@@ -85,26 +85,26 @@ namespace OdinInterop
 
         // CapsuleCollider API
 
-        private static Vector3 GetCapsuleColliderCenter(ObjectHandle<CapsuleCollider> capsuleCollider) => capsuleCollider ? capsuleCollider.value.center : default;
-        private static void SetCapsuleColliderCenter(ObjectHandle<CapsuleCollider> capsuleCollider, Vector3 center)
+        private static Vector3 GetCapsuleCenter(ObjectHandle<CapsuleCollider> capsuleCollider) => capsuleCollider ? capsuleCollider.value.center : default;
+        private static void SetCapsuleCenter(ObjectHandle<CapsuleCollider> capsuleCollider, Vector3 center)
         {
             if (capsuleCollider)
                 capsuleCollider.value.center = center;
         }
-        private static float GetCapsuleColliderRadius(ObjectHandle<CapsuleCollider> capsuleCollider) => capsuleCollider ? capsuleCollider.value.radius : 0f;
-        private static void SetCapsuleColliderRadius(ObjectHandle<CapsuleCollider> capsuleCollider, float radius)
+        private static float GetCapsuleRadius(ObjectHandle<CapsuleCollider> capsuleCollider) => capsuleCollider ? capsuleCollider.value.radius : 0f;
+        private static void SetCapsuleRadius(ObjectHandle<CapsuleCollider> capsuleCollider, float radius)
         {
             if (capsuleCollider)
                 capsuleCollider.value.radius = radius;
         }
-        private static float GetCapsuleColliderHeight(ObjectHandle<CapsuleCollider> capsuleCollider) => capsuleCollider ? capsuleCollider.value.height : 0f;
-        private static void SetCapsuleColliderHeight(ObjectHandle<CapsuleCollider> capsuleCollider, float height)
+        private static float GetCapsuleHeight(ObjectHandle<CapsuleCollider> capsuleCollider) => capsuleCollider ? capsuleCollider.value.height : 0f;
+        private static void SetCapsuleHeight(ObjectHandle<CapsuleCollider> capsuleCollider, float height)
         {
             if (capsuleCollider)
                 capsuleCollider.value.height = height;
         }
-        private static int GetCapsuleColliderDirection(ObjectHandle<CapsuleCollider> capsuleCollider) => capsuleCollider ? capsuleCollider.value.direction : 0;
-        private static void SetCapsuleColliderDirection(ObjectHandle<CapsuleCollider> capsuleCollider, int direction)
+        private static int GetCapsuleDirection(ObjectHandle<CapsuleCollider> capsuleCollider) => capsuleCollider ? capsuleCollider.value.direction : 0;
+        private static void SetCapsuleDirection(ObjectHandle<CapsuleCollider> capsuleCollider, int direction)
         {
             if (capsuleCollider)
                 capsuleCollider.value.direction = direction;
@@ -112,20 +112,20 @@ namespace OdinInterop
 
         // MeshCollider API
 
-        private static ObjectHandle<Mesh> GetMeshColliderSharedMesh(ObjectHandle<MeshCollider> meshCollider) => meshCollider ? meshCollider.value.sharedMesh : default;
-        private static void SetMeshColliderSharedMesh(ObjectHandle<MeshCollider> meshCollider, ObjectHandle<Mesh> mesh)
+        private static ObjectHandle<Mesh> GetMeshSharedMesh(ObjectHandle<MeshCollider> meshCollider) => meshCollider ? meshCollider.value.sharedMesh : default;
+        private static void SetMeshSharedMesh(ObjectHandle<MeshCollider> meshCollider, ObjectHandle<Mesh> mesh)
         {
             if (meshCollider)
                 meshCollider.value.sharedMesh = mesh;
         }
-        private static bool IsMeshColliderConvex(ObjectHandle<MeshCollider> meshCollider) => meshCollider ? meshCollider.value.convex : false;
-        private static void SetMeshColliderConvex(ObjectHandle<MeshCollider> meshCollider, bool convex)
+        private static bool IsMeshConvex(ObjectHandle<MeshCollider> meshCollider) => meshCollider ? meshCollider.value.convex : false;
+        private static void SetMeshConvex(ObjectHandle<MeshCollider> meshCollider, bool convex)
         {
             if (meshCollider)
                 meshCollider.value.convex = convex;
         }
-        private static MeshColliderCookingOptions GetMeshColliderCookingOptions(ObjectHandle<MeshCollider> meshCollider) => meshCollider ? meshCollider.value.cookingOptions : default;
-        private static void SetMeshColliderCookingOptions(ObjectHandle<MeshCollider> meshCollider, MeshColliderCookingOptions options)
+        private static MeshColliderCookingOptions GetMeshCookingOptions(ObjectHandle<MeshCollider> meshCollider) => meshCollider ? meshCollider.value.cookingOptions : default;
+        private static void SetMeshCookingOptions(ObjectHandle<MeshCollider> meshCollider, MeshColliderCookingOptions options)
         {
             if (meshCollider)
                 meshCollider.value.cookingOptions = options;

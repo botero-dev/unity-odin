@@ -345,14 +345,7 @@ namespace OdinInterop.Editor
                 {
                     var classStem = className.StartsWith("Unity") ? className["Unity".Length..] : className;
                     var classSnake = ToSnakeCase(classStem);
-                    var methodName = m.Name;
-
-                    // Strip the class stem if it appears anywhere in the method name (e.g. GetSceneName -> GetName)
-                    var stemIndex = methodName.IndexOf(classStem, StringComparison.Ordinal);
-                    if (stemIndex > 0)
-                        methodName = methodName.Remove(stemIndex, classStem.Length);
-
-                    return $"{classSnake}_{ToSnakeCase(methodName)}";
+                    return $"{classSnake}_{ToSnakeCase(m.Name)}";
                 }
                 return $"{cleanTyName}{underScoreIfCleanTyName}{ToSnakeCase(m.Name)}";
             }

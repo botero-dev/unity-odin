@@ -7,27 +7,27 @@ namespace OdinInterop
     {
         // Physics API
 
-        private static Vector3 GetPhysicsGravity() => Physics.gravity;
-        private static void SetPhysicsGravity(Vector3 gravity) => Physics.gravity = gravity;
-        private static float GetPhysicsDefaultContactOffset() => Physics.defaultContactOffset;
-        private static void SetPhysicsDefaultContactOffset(float offset) => Physics.defaultContactOffset = offset;
-        private static float GetPhysicsSleepThreshold() => Physics.sleepThreshold;
-        private static void SetPhysicsSleepThreshold(float threshold) => Physics.sleepThreshold = threshold;
-        private static float GetPhysicsBounceThreshold() => Physics.bounceThreshold;
-        private static void SetPhysicsBounceThreshold(float threshold) => Physics.bounceThreshold = threshold;
-        private static int GetPhysicsDefaultSolverIterations() => Physics.defaultSolverIterations;
-        private static void SetPhysicsDefaultSolverIterations(int iterations) => Physics.defaultSolverIterations = iterations;
-        private static int GetPhysicsDefaultSolverVelocityIterations() => Physics.defaultSolverVelocityIterations;
-        private static void SetPhysicsDefaultSolverVelocityIterations(int iterations) => Physics.defaultSolverVelocityIterations = iterations;
-        private static float GetPhysicsDefaultMaxAngularSpeed() => Physics.defaultMaxAngularSpeed;
-        private static void SetPhysicsDefaultMaxAngularSpeed(float speed) => Physics.defaultMaxAngularSpeed = speed;
-        private static float GetPhysicsDefaultMaxDepenetrationVelocity() => Physics.defaultMaxDepenetrationVelocity;
-        private static void SetPhysicsDefaultMaxDepenetrationVelocity(float velocity) => Physics.defaultMaxDepenetrationVelocity = velocity;
-        private static bool GetPhysicsReuseCollisionCallbacks() => Physics.reuseCollisionCallbacks;
-        private static void SetPhysicsReuseCollisionCallbacks(bool reuse) => Physics.reuseCollisionCallbacks = reuse;
-        private static PhysicsScene GetPhysicsDefaultPhysicsScene() => Physics.defaultPhysicsScene;
-        private static void SimulatePhysics(float step) => Physics.Simulate(step);
-        private static void SyncPhysicsTransforms() => Physics.SyncTransforms();
+        private static Vector3 GetGravity() => Physics.gravity;
+        private static void SetGravity(Vector3 gravity) => Physics.gravity = gravity;
+        private static float GetDefaultContactOffset() => Physics.defaultContactOffset;
+        private static void SetDefaultContactOffset(float offset) => Physics.defaultContactOffset = offset;
+        private static float GetSleepThreshold() => Physics.sleepThreshold;
+        private static void SetSleepThreshold(float threshold) => Physics.sleepThreshold = threshold;
+        private static float GetBounceThreshold() => Physics.bounceThreshold;
+        private static void SetBounceThreshold(float threshold) => Physics.bounceThreshold = threshold;
+        private static int GetDefaultSolverIterations() => Physics.defaultSolverIterations;
+        private static void SetDefaultSolverIterations(int iterations) => Physics.defaultSolverIterations = iterations;
+        private static int GetDefaultSolverVelocityIterations() => Physics.defaultSolverVelocityIterations;
+        private static void SetDefaultSolverVelocityIterations(int iterations) => Physics.defaultSolverVelocityIterations = iterations;
+        private static float GetDefaultMaxAngularSpeed() => Physics.defaultMaxAngularSpeed;
+        private static void SetDefaultMaxAngularSpeed(float speed) => Physics.defaultMaxAngularSpeed = speed;
+        private static float GetDefaultMaxDepenetrationVelocity() => Physics.defaultMaxDepenetrationVelocity;
+        private static void SetDefaultMaxDepenetrationVelocity(float velocity) => Physics.defaultMaxDepenetrationVelocity = velocity;
+        private static bool GetReuseCollisionCallbacks() => Physics.reuseCollisionCallbacks;
+        private static void SetReuseCollisionCallbacks(bool reuse) => Physics.reuseCollisionCallbacks = reuse;
+        private static PhysicsScene GetDefaultScene() => Physics.defaultPhysicsScene;
+        private static void Simulate(float step) => Physics.Simulate(step);
+        private static void SyncTransforms() => Physics.SyncTransforms();
         private static bool ComputePenetration(ObjectHandle<Collider> colliderA, Vector3 positionA, Quaternion rotationA, ObjectHandle<Collider> colliderB, Vector3 positionB, Quaternion rotationB, out Vector3 direction, out float distance)
         {
             if (colliderA && colliderB)

@@ -8,7 +8,7 @@ namespace OdinInterop
     {
         // gameobject api
 
-        private static ObjectHandle<GameObject> CreateGameObject(String8 name, Slice<String8> componentTypeNames = default)
+        private static ObjectHandle<GameObject> Create(String8 name, Slice<String8> componentTypeNames = default)
         {
             if (componentTypeNames.ptr == null)
                 return new GameObject(name.ToString());
@@ -20,17 +20,17 @@ namespace OdinInterop
             return new GameObject(name.ToString(), arr);
         }
 
-        private static ObjectHandle<GameObject> CreatePrimitiveGameObject(PrimitiveType type)
+        private static ObjectHandle<GameObject> CreatePrimitive(PrimitiveType type)
         {
             return GameObject.CreatePrimitive(type);
         }
 
-        private static ObjectHandle<GameObject> FindGameObjectByName(String8 name)
+        private static ObjectHandle<GameObject> FindByName(String8 name)
         {
             return GameObject.Find(name.ToString());
         }
 
-        private static ObjectHandle<GameObject> FindGameObjectByTag(String8 tag)
+        private static ObjectHandle<GameObject> FindByTag(String8 tag)
         {
             return GameObject.FindGameObjectWithTag(tag.ToString());
         }
@@ -44,7 +44,7 @@ namespace OdinInterop
             return slice;
         }
 
-        private static bool IsGameObjectActiveInHierarchy(ObjectHandle<GameObject> gameObject)
+        private static bool IsActiveInHierarchy(ObjectHandle<GameObject> gameObject)
         {
             if (gameObject)
                 return gameObject.value.activeInHierarchy;
@@ -52,7 +52,7 @@ namespace OdinInterop
                 return false;
         }
 
-        private static bool IsGameObjectActive(ObjectHandle<GameObject> gameObject)
+        private static bool IsActive(ObjectHandle<GameObject> gameObject)
         {
             if (gameObject)
                 return gameObject.value.activeSelf;
@@ -60,13 +60,13 @@ namespace OdinInterop
                 return false;
         }
 
-        private static void SetGameObjectActive(ObjectHandle<GameObject> gameObject, bool active)
+        private static void SetActive(ObjectHandle<GameObject> gameObject, bool active)
         {
             if (gameObject)
                 gameObject.value.SetActive(active);
         }
 
-        private static int GetGameObjectLayer(ObjectHandle<GameObject> gameObject)
+        private static int GetLayer(ObjectHandle<GameObject> gameObject)
         {
             if (gameObject)
                 return gameObject.value.layer;
@@ -74,13 +74,13 @@ namespace OdinInterop
                 return 0;
         }
 
-        private static void SetGameObjectLayer(ObjectHandle<GameObject> gameObject, int layer)
+        private static void SetLayer(ObjectHandle<GameObject> gameObject, int layer)
         {
             if (gameObject)
                 gameObject.value.layer = layer;
         }
 
-        private static int GetSceneFromGameObject(ObjectHandle<GameObject> gameObject)
+        private static int GetSceneFrom(ObjectHandle<GameObject> gameObject)
         {
             if (!gameObject) return default;
 
@@ -88,7 +88,7 @@ namespace OdinInterop
             return sc.handle;
         }
 
-        private static ObjectHandle<Transform> GetTransformFromGameObject(ObjectHandle<GameObject> gameObject)
+        private static ObjectHandle<Transform> GetTransformFrom(ObjectHandle<GameObject> gameObject)
         {
             if (gameObject)
                 return gameObject.value.transform;
@@ -206,7 +206,7 @@ namespace OdinInterop
             return true;
         }
 
-        private static bool CompareGameObjectTag(ObjectHandle<GameObject> gameObject, String8 tag)
+        private static bool CompareTag(ObjectHandle<GameObject> gameObject, String8 tag)
         {
             if (gameObject)
                 return gameObject.value.CompareTag(tag.ToString());

@@ -3,7 +3,7 @@ using UnityEngine;
 namespace OdinInterop
 {
     [OdinExport]
-    internal static unsafe partial class UnityComponent
+    internal static partial class UnityComponent
     {
         // component api
 
@@ -15,7 +15,7 @@ namespace OdinInterop
                 return default;
         }
 
-        private static ObjectHandle<Transform> GetTransformFromComponent(ObjectHandle<Component> component)
+        private static ObjectHandle<Transform> GetTransformFrom(ObjectHandle<Component> component)
         {
             if (component)
                 return component.value.transform;
