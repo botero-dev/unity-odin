@@ -3,7 +3,8 @@ using UnityEngine.Rendering;
 
 namespace OdinInterop
 {
-    internal static unsafe partial class EngineBindings
+    [OdinExport]
+    internal static unsafe partial class UnityRenderer
     {
         // Renderer API
 

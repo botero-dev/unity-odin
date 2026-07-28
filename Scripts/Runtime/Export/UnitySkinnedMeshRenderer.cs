@@ -4,7 +4,8 @@ using UnityEngine.Playables;
 
 namespace OdinInterop
 {
-    internal static unsafe partial class EngineBindings
+    [OdinExport]
+    internal static unsafe partial class UnitySkinnedMeshRenderer
     {
         // SkinnedMeshRenderer API
 

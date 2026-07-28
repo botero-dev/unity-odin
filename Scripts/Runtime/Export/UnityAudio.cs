@@ -3,7 +3,8 @@ using UnityEngine.Audio;
 
 namespace OdinInterop
 {
-    internal static unsafe partial class EngineBindings
+    [OdinExport]
+    internal static unsafe partial class UnityAudio
     {
         // AudioSource API
 

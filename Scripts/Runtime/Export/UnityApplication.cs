@@ -2,7 +2,8 @@ using UnityEngine;
 
 namespace OdinInterop
 {
-    internal static partial class EngineBindings
+    [OdinExport]
+    internal static unsafe partial class UnityApplication
     {
         private static String8 GetApplicationBuildGUID(Allocator allocator) => new String8(Application.buildGUID, allocator);
         private static String8 GetApplicationCompanyName(Allocator allocator) => new String8(Application.companyName, allocator);

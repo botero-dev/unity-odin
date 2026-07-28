@@ -2,7 +2,8 @@ using UnityEngine;
 
 namespace OdinInterop
 {
-    internal static unsafe partial class EngineBindings
+    [OdinExport]
+    internal static unsafe partial class UnityPhysics
     {
         // Physics API
 

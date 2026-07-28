@@ -2,7 +2,8 @@ using UnityEngine;
 
 namespace OdinInterop
 {
-    internal static partial class EngineBindings
+    [OdinExport]
+    internal static unsafe partial class UnityObject
     {
         // Object API
 

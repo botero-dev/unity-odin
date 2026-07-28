@@ -3,7 +3,8 @@ using System;
 
 namespace OdinInterop
 {
-    internal static unsafe partial class EngineBindings
+    [OdinExport]
+    internal static unsafe partial class UnityGameObject
     {
         // gameobject api
 
@@ -65,7 +66,7 @@ namespace OdinInterop
                 gameObject.value.SetActive(active);
         }
 
-        private static int UnityOdnTropInternalGetGameObjectLayer(ObjectHandle<GameObject> gameObject)
+        private static int GetGameObjectLayer(ObjectHandle<GameObject> gameObject)
         {
             if (gameObject)
                 return gameObject.value.layer;
@@ -73,7 +74,7 @@ namespace OdinInterop
                 return 0;
         }
 
-        private static void UnityOdnTropInternalSetGameObjectLayer(ObjectHandle<GameObject> gameObject, int layer)
+        private static void SetGameObjectLayer(ObjectHandle<GameObject> gameObject, int layer)
         {
             if (gameObject)
                 gameObject.value.layer = layer;

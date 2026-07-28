@@ -6,7 +6,8 @@ using PhysicsMaterial = UnityEngine.PhysicMaterial;
 
 namespace OdinInterop
 {
-    internal static partial class EngineBindings
+    [OdinExport]
+    internal static unsafe partial class UnityCollider
     {
         // Collider API
 

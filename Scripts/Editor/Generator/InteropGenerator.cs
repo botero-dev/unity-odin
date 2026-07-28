@@ -329,7 +329,7 @@ namespace OdinInterop.Editor
         private static void GenerateExportOdinCode(Type t, string odinSrcAppend)
         {
             var tyName = t.FullName.Replace('+', '.').Replace('.', '_');
-            var cleanTyName = tyName == "OdinInterop_EngineBindings" ? "" : tyName;
+            var cleanTyName = tyName.StartsWith("OdinInterop_") ? "" : tyName;
             var underScoreIfCleanTyName = cleanTyName == "" ? "" : "_";
             var className = t.Name;
             var instName = $"_{className}";
@@ -338,10 +338,30 @@ namespace OdinInterop.Editor
                 .Where(x => !x.Name.StartsWith("odntrop_"))
                 .ToArray();
 
+            // User-facing Odin wrapper names: class prefix (minus "Unity") + snake_case method
+            string OdinFnName(MethodInfo m)
+            {
+                if (cleanTyName == "")
+                {
+                    var classStem = className.StartsWith("Unity") ? className["Unity".Length..] : className;
+                    var classSnake = ToSnakeCase(classStem);
+                    var methodName = m.Name;
+
+                    // Strip the class stem if it appears anywhere in the method name (e.g. GetSceneName -> GetName)
+                    var stemIndex = methodName.IndexOf(classStem, StringComparison.Ordinal);
+                    if (stemIndex > 0)
+                        methodName = methodName.Remove(stemIndex, classStem.Length);
+
+                    return $"{classSnake}_{ToSnakeCase(methodName)}";
+                }
+                return $"{cleanTyName}{underScoreIfCleanTyName}{ToSnakeCase(m.Name)}";
+            }
+
             if (exportedFns.Length == 0)
                 return;
 
-            var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, $"{tyName}_impl.odin"));
+            var fileName = tyName.StartsWith("OdinInterop_") ? tyName["OdinInterop_".Length..] : tyName;
+            var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, $"{fileName}_impl.odin"));
 
             s_StrBld
                 .Clear()
@@ -413,7 +433,7 @@ namespace OdinInterop.Editor
                 {
                     s_StrBld
                         .AppendIndent()
-                        .Append($"{cleanTyName}{underScoreIfCleanTyName}{exportedFn.Name}_impl :: proc(");
+                        .Append($"{OdinFnName(exportedFn)}_impl :: proc(");
 
                     if (!exportedFn.IsStatic)
                     {
@@ -551,7 +571,7 @@ namespace OdinInterop.Editor
 
             // Generate decl file — forwarding wrappers to _impl
             {
-                var declFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, $"{tyName}.odin"));
+                var declFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, $"{fileName}.odin"));
                 s_StrBld
                     .Clear()
                     .AppendLine("// THIS IS A GENERATED FILE - DO NOT MODIFY OR YOUR CHANGES WILL BE LOST!")
@@ -575,7 +595,7 @@ namespace OdinInterop.Editor
 
                     s_StrBld
                         .AppendIndent()
-                        .Append($"{cleanTyName}{underScoreIfCleanTyName}{exportedFn.Name} :: #force_inline proc(");
+                        .Append($"{OdinFnName(exportedFn)} :: #force_inline proc(");
 
                     if (!exportedFn.IsStatic)
                     {
@@ -600,7 +620,7 @@ namespace OdinInterop.Editor
                     s_StrBld.AppendIndent();
                     if (exportedFn.ReturnType != typeof(void))
                         s_StrBld.Append("return ");
-                    s_StrBld.Append($"{cleanTyName}{underScoreIfCleanTyName}{exportedFn.Name}_impl(");
+                    s_StrBld.Append($"{OdinFnName(exportedFn)}_impl(");
 
                     if (!exportedFn.IsStatic)
                     {
@@ -628,7 +648,7 @@ namespace OdinInterop.Editor
         private static void GenerateImportOdinCode(Type t, string odinSrcAppend)
         {
             var tyName = t.FullName.Replace('+', '.').Replace('.', '_');
-            var cleanTyName = (tyName == "OdinInterop_EngineBindings" || tyName == "OdinInterop_EngineBindingsImports") ? "" : tyName;
+            var cleanTyName = tyName.StartsWith("OdinInterop_") ? "" : tyName;
             var underScoreIfCleanTyName = cleanTyName == "" ? "" : "_";
             var className = t.Name;
             var instName = $"_{className}";
@@ -1077,6 +1097,27 @@ namespace OdinInterop.Editor
         {
             var sb = new StringBuilder();
             sb.AppendOdnTypeName(t);
+            return sb.ToString();
+        }
+
+        private static string ToSnakeCase(string pascalCase)
+        {
+            if (string.IsNullOrEmpty(pascalCase)) return pascalCase;
+            var sb = new StringBuilder(pascalCase.Length + 4);
+            for (int i = 0; i < pascalCase.Length; i++)
+            {
+                var c = pascalCase[i];
+                if (char.IsUpper(c))
+                {
+                    if (i > 0 && sb[^1] != '_')
+                        sb.Append('_');
+                    sb.Append(char.ToLowerInvariant(c));
+                }
+                else
+                {
+                    sb.Append(c);
+                }
+            }
             return sb.ToString();
         }
     }
