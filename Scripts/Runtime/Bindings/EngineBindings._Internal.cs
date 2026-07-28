@@ -9,7 +9,7 @@ namespace OdinInterop
     /// <summary>
     /// C# functions exported to Odin (called by Odin).
     /// </summary>
-    [OdinExport(odinSrcAppend = InteropGeneratorInbuiltFiles.ENGINE_BINDINGS_EXPORT_APPEND)]
+    [OdinExport]
     internal static unsafe partial class EngineBindings
     {
 

@@ -3,3 +3,4 @@ Scripts/Editor/.odin2cs/odin2cs
 Source/.exports
 Source/.imports
 Generated/*
+Scripts/Runtime/Generated/*

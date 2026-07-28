@@ -41,5 +41,8 @@ namespace OdinInterop
 
         /// <summary>Original Odin parameter types, in order (e.g. ["int", "i64"]).</summary>
         public string[] ParamTypes { get; set; } = System.Array.Empty<string>();
+
+        /// <summary>The Odin package where this function lives (e.g. "interop"). Used to emit the correct import and call prefix.</summary>
+        public string OdinPackage { get; set; } = "";
     }
 }

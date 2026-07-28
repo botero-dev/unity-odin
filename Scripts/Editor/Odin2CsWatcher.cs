@@ -21,6 +21,7 @@ namespace OdinInterop.Editor
             "Scripts", "Editor", ".odin2cs"));
         private static readonly string ODIN2CS_PATH = Path.Combine(ODIN2CS_DIR, "odin2cs");
         private static readonly string ODIN2CS_OUTPUT = Path.GetFullPath(Path.Combine(Application.dataPath, "UnityOdin", "Generated"));
+        private static readonly string ODIN2CS_INTEROP_OUTPUT = Path.GetFullPath(Path.Combine(Application.dataPath, "UnityOdin", "Scripts", "Runtime", "Generated"));
 
         private static void OnPostprocessAllAssets(
             string[] importedAssets,
@@ -56,14 +57,25 @@ namespace OdinInterop.Editor
 
             if (!fullPath.StartsWith(sourceDir + "/")) return false;
 
-            // Only root files, not exports/ or imports/
+            // Only root files and interop/ subdirectory, not exports/ or imports/
             var relative = fullPath.Substring(sourceDir.Length + 1);
+            if (relative.StartsWith("interop/")) return true;
             return !relative.Contains("/");
         }
 
         internal static void RunOdin2Cs()
         {
-            if (!File.Exists(ODIN2CS_PATH))
+            // Rebuild odin2cs if the source is newer than the binary (e.g. after tooling changes)
+            var odin2csSource = Path.Combine(ODIN2CS_DIR, "main.odin");
+            var needsRebuild = !File.Exists(ODIN2CS_PATH);
+            if (!needsRebuild && File.Exists(odin2csSource))
+            {
+                var srcTime = File.GetLastWriteTimeUtc(odin2csSource);
+                var binTime = File.GetLastWriteTimeUtc(ODIN2CS_PATH);
+                needsRebuild = srcTime > binTime;
+            }
+
+            if (needsRebuild)
             {
                 if (!TryBuildOdin2Cs())
                 {
@@ -75,18 +87,22 @@ namespace OdinInterop.Editor
             }
 
             Directory.CreateDirectory(ODIN2CS_OUTPUT);
+            Directory.CreateDirectory(ODIN2CS_INTEROP_OUTPUT);
 
             // Snapshot existing generated files before regeneration
             var prevFiles = new Dictionary<string, string>();
-            if (Directory.Exists(ODIN2CS_OUTPUT))
+            foreach (var dir in new[] { ODIN2CS_OUTPUT, ODIN2CS_INTEROP_OUTPUT })
             {
-                foreach (var f in Directory.GetFiles(ODIN2CS_OUTPUT, "*.g.cs"))
-                    prevFiles[f] = File.ReadAllText(f);
+                if (Directory.Exists(dir))
+                {
+                    foreach (var f in Directory.GetFiles(dir, "*.g.cs"))
+                        prevFiles[f] = File.ReadAllText(f);
+                }
             }
 
             var psi = new ProcessStartInfo(ODIN2CS_PATH)
             {
-                Arguments = $"\"{ODIN_SOURCE_DIR}\" \"{ODIN2CS_OUTPUT}\"",
+                Arguments = $"\"{ODIN_SOURCE_DIR}\" \"{ODIN2CS_OUTPUT}\" \"{ODIN2CS_INTEROP_OUTPUT}\"",
                 WorkingDirectory = ODIN_SOURCE_DIR,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -108,22 +124,30 @@ namespace OdinInterop.Editor
 
                 // Check if any generated C# files actually changed
                 var csharpChanged = false;
-                foreach (var f in Directory.GetFiles(ODIN2CS_OUTPUT, "*.g.cs"))
+                foreach (var dir in new[] { ODIN2CS_OUTPUT, ODIN2CS_INTEROP_OUTPUT })
                 {
-                    var current = File.ReadAllText(f);
-                    if (!prevFiles.TryGetValue(f, out var prev) || prev != current)
+                    if (!Directory.Exists(dir)) continue;
+                    foreach (var f in Directory.GetFiles(dir, "*.g.cs"))
                     {
-                        csharpChanged = true;
-                        break;
+                        var current = File.ReadAllText(f);
+                        if (!prevFiles.TryGetValue(f, out var prev) || prev != current)
+                        {
+                            csharpChanged = true;
+                            break;
+                        }
                     }
+                    if (csharpChanged) break;
                 }
                 // Also check for deleted files
-                foreach (var prev in prevFiles)
+                if (!csharpChanged)
                 {
-                    if (!File.Exists(prev.Key))
+                    foreach (var prev in prevFiles)
                     {
-                        csharpChanged = true;
-                        break;
+                        if (!File.Exists(prev.Key))
+                        {
+                            csharpChanged = true;
+                            break;
+                        }
                     }
                 }
 

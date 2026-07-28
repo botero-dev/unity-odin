@@ -8,13 +8,14 @@ import "core:os"
 import "core:strings"
 
 ProcInfo :: struct {
-	class_name:  string,
-	method_name: string,
-	odin_name:   string,
-	params:      []ParamInfo,
-	return_type: string,
-	source_file: string,
-	source_line: int,
+	class_name:   string,
+	method_name:  string,
+	odin_name:    string,
+	params:       []ParamInfo,
+	return_type:  string,
+	source_file:  string,
+	source_line:  int,
+	odin_package: string,
 }
 
 ParamInfo :: struct {
@@ -27,7 +28,9 @@ main :: proc() {
 
 	input_dir := "."
 	output_dir := ""
+	interop_output_dir := ""
 	defer delete(output_dir)
+	defer delete(interop_output_dir)
 
 	if len(args) >= 1 {
 		input_dir = args[0]
@@ -35,22 +38,46 @@ main :: proc() {
 	if len(args) >= 2 {
 		output_dir = strings.clone(args[1])
 	}
+	if len(args) >= 3 {
+		interop_output_dir = strings.clone(args[2])
+	}
 
 	if output_dir == "" {
 		output_dir = fmt.tprintf("%s/../Generated", input_dir)
 	}
+	if interop_output_dir == "" {
+		interop_output_dir = output_dir
+	}
 
 	fmt.printf("Odin2Cs: Scanning %s -> %s\n", input_dir, output_dir)
 
+	os.make_directory(output_dir)
+	total_files := 0
+
+	// Process main package
+	process_package(input_dir, output_dir, "", &total_files)
+
+	// Process interop sub-package (internal engine bindings)
+	interop_dir := fmt.tprintf("%s/interop", input_dir)
+	if os.exists(interop_dir) {
+		fmt.printf("Odin2Cs: Scanning %s -> %s\n", interop_dir, interop_output_dir)
+		os.make_directory(interop_output_dir)
+		process_package(interop_dir, interop_output_dir, "interop", &total_files)
+	}
+
+	if total_files == 0 {
+		fmt.printf("No binding procs found (no functions matching ClassName_MethodName pattern)\n")
+	} else {
+		fmt.printf("Done.\n")
+	}
+}
+
+process_package :: proc(input_dir: string, output_dir: string, odin_package: string, total_files: ^int) {
 	pkg, ok := parser.parse_package_from_path(input_dir)
 	if !ok {
 		fmt.eprintf("Error: failed to parse package at %s\n", input_dir)
-		os.exit(1)
+		return
 	}
-
-	// Generate one .cs file per .odin source file
-	os.make_directory(output_dir)
-	total_files := 0
 
 	for path, file in pkg.files {
 		// Extract filename from path
@@ -74,7 +101,7 @@ main :: proc() {
 		// Collect procs from this file only
 		file_procs := make([dynamic]ProcInfo)
 		for decl in file.decls {
-			process_node(decl, &file_procs, path)
+			process_node(decl, &file_procs, path, odin_package)
 		}
 
 		if len(file_procs) == 0 {
@@ -113,28 +140,22 @@ main :: proc() {
 		err := os.write_entire_file(output_path, transmute([]byte)cs_code)
 		if err == nil {
 			fmt.printf("  Generated: %s (%d methods in %d classes)\n", output_path, len(file_procs), len(class_names))
-			total_files += 1
+			total_files^ += 1
 		} else {
 			fmt.eprintf("  Error writing %s: %v\n", output_path, err)
 		}
 	}
-
-	if total_files == 0 {
-		fmt.printf("No binding procs found (no functions matching ClassName_MethodName pattern)\n")
-	} else {
-		fmt.printf("Done.\n")
-	}
 }
 
-process_node :: proc(stmt: ^ast.Stmt, procs: ^[dynamic]ProcInfo, source_path: string) {
+process_node :: proc(stmt: ^ast.Stmt, procs: ^[dynamic]ProcInfo, source_path: string, odin_package: string) {
 	#partial switch s in stmt.derived_stmt {
 	case ^ast.Value_Decl:
-		process_value_decl(s, procs, source_path)
+		process_value_decl(s, procs, source_path, odin_package)
 	case:
 	}
 }
 
-process_value_decl :: proc(vd: ^ast.Value_Decl, procs: ^[dynamic]ProcInfo, source_path: string) {
+process_value_decl :: proc(vd: ^ast.Value_Decl, procs: ^[dynamic]ProcInfo, source_path: string, odin_package: string) {
 	if len(vd.names) == 0 || len(vd.values) == 0 {
 		return
 	}
@@ -170,6 +191,46 @@ process_value_decl :: proc(vd: ^ast.Value_Decl, procs: ^[dynamic]ProcInfo, sourc
 	}
 
 	// Check for ClassName_MethodName pattern (at least one underscore)
+	// Try double-underscore first (engine_bindings_imports__get_main_odn_allocator),
+	// then fall back to single underscore (global_awake) for backward compatibility.
+	split_pos := -1
+	// Look for "__" (double underscore)
+	for i := 0; i < len(full_name) - 1; i += 1 {
+		if full_name[i] == '_' && full_name[i+1] == '_' {
+			split_pos = i
+			break
+		}
+	}
+
+	if split_pos > 0 {
+		// Double-underscore separator: everything before "__" is class, after is method
+		class_name := full_name[:split_pos]
+		method_name := full_name[split_pos + 2:]
+
+		// Skip odntrop_ prefixed ones (internal)
+		if strings.has_prefix(class_name, "odntrop") {
+			return
+		}
+
+		// Convert snake_case to PascalCase for C# naming conventions
+		class_name_pascal := to_pascal_case(class_name)
+		method_name_pascal := to_pascal_case(method_name)
+
+		info := ProcInfo{
+			class_name   = strings.clone(class_name_pascal),
+			method_name  = strings.clone(method_name_pascal),
+			odin_name    = strings.clone(full_name),
+			return_type  = extract_return_type(proc_type),
+			source_file  = strings.clone(source_path),
+			source_line  = proc_lit.pos.line,
+			odin_package = strings.clone(odin_package),
+		}
+		append_params(&info, proc_type)
+		append(procs, info)
+		return
+	}
+
+	// Fall back to single underscore: ClassName_MethodName
 	// Split at the FIRST underscore: class_method_name -> class / method_name
 	first_underscore := -1
 	for i := 0; i < len(full_name); i += 1 {
@@ -196,33 +257,38 @@ process_value_decl :: proc(vd: ^ast.Value_Decl, procs: ^[dynamic]ProcInfo, sourc
 	method_name_pascal := to_pascal_case(method_name)
 
 	info := ProcInfo{
-		class_name  = strings.clone(class_name_pascal),
-		method_name = strings.clone(method_name_pascal),
-		odin_name   = strings.clone(full_name),
-		return_type = extract_return_type(proc_type),
-		source_file = strings.clone(source_path),
-		source_line = proc_lit.pos.line,
+		class_name   = strings.clone(class_name_pascal),
+		method_name  = strings.clone(method_name_pascal),
+		odin_name    = strings.clone(full_name),
+		return_type  = extract_return_type(proc_type),
+		source_file  = strings.clone(source_path),
+		source_line  = proc_lit.pos.line,
+		odin_package = strings.clone(odin_package),
 	}
 
-	// Extract params
-	if proc_type.params != nil {
-		params: [dynamic]ParamInfo
-		for f in proc_type.params.list {
-			param_type := extract_type_string(f.type)
-			for name_expr in f.names {
-				#partial switch id in name_expr.derived_expr {
-				case ^ast.Ident:
-					append(&params, ParamInfo{
-						name = strings.clone(id.name),
-						type = strings.clone(param_type),
-					})
-				}
+	append_params(&info, proc_type)
+	append(procs, info)
+}
+
+append_params :: proc(info: ^ProcInfo, proc_type: ^ast.Proc_Type) {
+	if proc_type.params == nil {
+		return
+	}
+
+	params: [dynamic]ParamInfo
+	for f in proc_type.params.list {
+		param_type := extract_type_string(f.type)
+		for name_expr in f.names {
+			#partial switch id in name_expr.derived_expr {
+			case ^ast.Ident:
+				append(&params, ParamInfo{
+					name = strings.clone(id.name),
+					type = strings.clone(param_type),
+				})
 			}
 		}
-		info.params = params[:]
 	}
-
-	append(procs, info)
+	info.params = params[:]
 }
 
 extract_param_name :: proc(field: ^ast.Field) -> string {
@@ -253,8 +319,8 @@ extract_type_string :: proc(type_expr: ^ast.Expr) -> string {
 		elem := extract_type_string(alt.elem)
 		return fmt.tprintf("[dynamic]%s", elem)
 	case ^ast.Selector_Expr:
-		// Strip package prefix — only use the type name (e.g., "unity.TestComponent" -> "TestComponent")
-		return alt.field.name
+		// Preserve full qualified name (e.g., "runtime.Allocator", "unity.TestComponent")
+		return fmt.tprintf("%s.%s", alt.expr.derived_expr.(^ast.Ident).name, alt.field.name)
 	case ^ast.Proc_Type:
 		if alt.results == nil || len(alt.results.list) == 0 {
 			return "proc"
@@ -313,6 +379,25 @@ to_pascal_case :: proc(s: string) -> string {
 
 // Type mapping: Odin -> C# interop types
 map_type :: proc(odin_type: string) -> string {
+	// Handle slice types: []u8 → Slice<byte>, []i32 → Slice<int>, etc.
+	if strings.has_prefix(odin_type, "[]") {
+		elem := odin_type[2:]  // strip "[]" prefix
+		elem_mapped := map_type(elem)
+		return fmt.tprintf("Slice<%s>", elem_mapped)
+	}
+
+	// Handle qualified names: runtime.Allocator → Allocator, unity.TestComponent → TestComponent
+	if strings.contains(odin_type, ".") {
+		last_dot := -1
+		for i := len(odin_type) - 1; i >= 0; i -= 1 {
+			if odin_type[i] == '.' {
+				last_dot = i
+				break
+			}
+		}
+		return odin_type[last_dot + 1:]
+	}
+
 	switch odin_type {
 	case "i8":    return "sbyte"
 	case "i16":   return "short"
@@ -332,7 +417,7 @@ map_type :: proc(odin_type: string) -> string {
 	case "rawslice": return "RawSlice"
 	case "rawdynamicarray": return "RawDynamicArray"
 	case "rawobjecthandle": return "RawObjectHandle"
-	case: return odin_type // pass through for custom types (TestComponent, etc.)
+	case: return odin_type // pass through for custom types (TestComponent, Allocator, etc.)
 	}
 }
 
@@ -349,7 +434,7 @@ generate_csharp_file :: proc(base_name: string, class_names: [dynamic]string, cl
 		methods := class_methods[i]
 
 		fmt.sbprintf(&b, "[OdinImport]\n")
-		fmt.sbprintf(&b, "internal static partial class %s\n", class_name)
+		fmt.sbprintf(&b, "public static partial class %s\n", class_name)
 		strings.write_string(&b, "{\n")
 
 		for m in methods {
@@ -383,6 +468,10 @@ generate_csharp_file :: proc(base_name: string, class_names: [dynamic]string, cl
 					fmt.sbprintf(&b, "\"%s\"", param.type)
 				}
 				strings.write_string(&b, " }")
+			}
+
+			if m.odin_package != "" {
+				fmt.sbprintf(&b, ", OdinPackage = \"%s\"", m.odin_package)
 			}
 
 			strings.write_string(&b, ")]\n")

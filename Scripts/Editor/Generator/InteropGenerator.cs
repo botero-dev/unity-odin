@@ -308,10 +308,19 @@ namespace OdinInterop.Editor
         }
 
         // Prefix type names that were exported by Unity (in s_ExportedTypesFlat) with "exports."
+        // Also normalizes user-chosen import aliases (e.g. "unity.TestComponent" -> "exports.TestComponent")
         private static string QualifyExportType(string typeName, Type csharpType)
         {
             if (string.IsNullOrEmpty(typeName)) return typeName;
-            if (typeName.Contains('.')) return typeName;            // already qualified (e.g. runtime.Allocator)
+            if (typeName.Contains('.'))
+            {
+                // Already qualified — check if the base type is an exported Unity type
+                var lastDot = typeName.LastIndexOf('.');
+                var baseName = typeName.Substring(lastDot + 1);
+                if (csharpType != null && s_ExportedTypesFlat.Contains(csharpType))
+                    return $"exports.{baseName}";  // normalize alias to "exports."
+                return typeName;  // keep non-exported qualified types (e.g. runtime.Allocator)
+            }
             if (csharpType != null && s_ExportedTypesFlat.Contains(csharpType))
                 return $"exports.{typeName}";
             return typeName;
@@ -637,6 +646,15 @@ namespace OdinInterop.Editor
                 : tyName;
             var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_IMPORTS_DIR, $"{importOdinFileName}.odin"));
 
+            // Collect unique Odin packages referenced by imported methods
+            var odinPackages = new HashSet<string>();
+            foreach (var importedFn in importedFns)
+            {
+                var fd = importedFn.GetCustomAttribute<ForeignDeclAttribute>();
+                if (fd != null && !string.IsNullOrEmpty(fd.OdinPackage))
+                    odinPackages.Add(fd.OdinPackage);
+            }
+
             s_StrBld
                 .Clear()
                 .AppendLine("// THIS IS A GENERATED FILE - DO NOT MODIFY OR YOUR CHANGES WILL BE LOST!")
@@ -644,7 +662,12 @@ namespace OdinInterop.Editor
                 .AppendLine("package imports")
                 .AppendLine()
                 .AppendLine("import src \"..\"")
-                .AppendLine("import exports \"../.exports\"")
+                .AppendLine("import exports \"../.exports\"");
+
+            foreach (var pkg in odinPackages)
+                s_StrBld.AppendLine($"import {pkg} \"../{pkg}\"");
+
+            s_StrBld
                 .AppendLine("@require import \"base:runtime\"")
                 .AppendLine();
 
@@ -713,8 +736,16 @@ namespace OdinInterop.Editor
                         .AppendIndent()
                         .AppendLine("defer exports.G_OdnTrop_Internal_CtxNesting -= 1")
                         .AppendIndent()
-                        .Append(importedFn.ReturnType == typeof(void) ? "" : "return ")
-                        .Append(string.IsNullOrWhiteSpace(odinSrcAppend) ? "src." : "")
+                        .Append(importedFn.ReturnType == typeof(void) ? "" : "return ");
+
+                    // Use the Odin package prefix from ForeignDecl, or default to "src."
+                    var odinPkg = foreignDecl?.OdinPackage;
+                    if (!string.IsNullOrEmpty(odinPkg))
+                        s_StrBld.Append(odinPkg).Append(".");
+                    else if (string.IsNullOrWhiteSpace(odinSrcAppend))
+                        s_StrBld.Append("src.");
+
+                    s_StrBld
                         .Append(implName)
                         .Append("(");
 
