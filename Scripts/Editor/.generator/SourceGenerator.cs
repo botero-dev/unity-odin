@@ -83,14 +83,6 @@ namespace OdinInterop.SourceGenerator
                 if (sb.Length != 0)
                 {
                     ctx.AddSource(fileName, SourceText.From(sb.ToString(), Encoding.UTF8));
-                    // Debug: write to disk
-                    try
-                    {
-                        var debugDir = Path.Combine(Path.GetDirectoryName(classSymbol.Locations.FirstOrDefault()?.SourceTree?.FilePath ?? ".") ?? ".", ".gen-debug");
-                        Directory.CreateDirectory(debugDir);
-                        File.WriteAllText(Path.Combine(debugDir, fileName), sb.ToString());
-                    }
-                    catch { }
                 }
                 }
                 catch (Exception ex)

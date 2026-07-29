@@ -1114,9 +1114,9 @@ namespace OdinInterop.Editor
                 {
                     var gd = ts.GetGenericTypeDefinition();
                     if (gd == typeof(Slice<>) || gd == typeof(DynamicArray<>)
-                     || gd == typeof(List<>) || gd == typeof(ObjectHandle<>)) return true;
-                    if (gd == typeof(Span<>) || gd == typeof(ReadOnlySpan<>))
-                        return IsInteropSupported(ts.GetGenericArguments()[0]);
+                     || gd == typeof(List<>) || gd == typeof(ObjectHandle<>)
+                     || gd == typeof(Span<>) || gd == typeof(ReadOnlySpan<>))
+                        return ts.GetGenericArguments().All(a => IsInteropSupported(a));
                 }
                 return false;
             }
@@ -1597,6 +1597,14 @@ namespace OdinInterop.Editor
 
         private static StringBuilder AppendOdnTypeName(this StringBuilder sb, Type t)
         {
+            if (t.IsGenericParameter)
+            {
+                // safety guard: generic type params like T have no Odin representation;
+                // methods with open generics should have been filtered out by IsInteropSupported.
+                sb.Append("rawptr");
+                return sb;
+            }
+
             if (t.IsPointer || t.IsByRef)
             {
                 if (t == typeof(void*))
