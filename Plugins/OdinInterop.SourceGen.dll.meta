@@ -14,10 +14,10 @@ PluginImporter:
   validateReferences: 0
   platformData:
     Editor:
-      enabled: 1
+      enabled: 0
       settings:
         CPU: AnyCPU
-        DefaultValue: 1
+        DefaultValue: 0
         OS: AnyOS
     Any:
       enabled: 0

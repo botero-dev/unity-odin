@@ -397,12 +397,22 @@ namespace OdinInterop.Editor
             if (string.IsNullOrEmpty(typeName)) return typeName;
             if (typeName.Contains('.'))
             {
-                // Already qualified — check if the base type is an exported Unity type
+                // Already qualified — check if this is an exports type
                 var lastDot = typeName.LastIndexOf('.');
+                var prefix = typeName.Substring(0, lastDot);
                 var baseName = typeName.Substring(lastDot + 1);
-                if (csharpType != null && s_ExportedTypesFlat.Contains(csharpType))
-                    return $"exports.{baseName}";  // normalize alias to "exports."
-                return typeName;  // keep non-exported qualified types (e.g. runtime.Allocator)
+
+                // Known non-exports prefixes that should not be normalized
+                if (prefix == "exports" || prefix == "runtime" || prefix == "base" || prefix == "core")
+                    return typeName;
+
+                // If the C# type is an exported Unity type, or the prefix is an unknown alias
+                // (e.g. "unity" from a user-chosen import label), normalize to "exports."
+                if ((csharpType != null && s_ExportedTypesFlat.Contains(csharpType)) ||
+                    prefix != "src")
+                    return $"exports.{baseName}";
+
+                return typeName;  // keep src-prefixed types unchanged
             }
             if (csharpType != null && s_ExportedTypesFlat.Contains(csharpType))
                 return $"exports.{typeName}";

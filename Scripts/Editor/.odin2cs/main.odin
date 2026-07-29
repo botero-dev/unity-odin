@@ -72,6 +72,57 @@ main :: proc() {
 	}
 }
 
+// Extract the canonical package name from an import path (e.g. ".exports" -> "exports", "../.exports" -> "exports")
+import_path_to_canonical :: proc(path: string) -> string {
+	// Strip leading dots and slashes, and any surrounding quotes
+	s := path
+	for len(s) > 0 && (s[0] == '.' || s[0] == '/' || s[0] == '"') {
+		s = s[1:]
+	}
+	// Strip trailing quotes
+	for len(s) > 0 && s[len(s)-1] == '"' {
+		s = s[:len(s)-1]
+	}
+	return s
+}
+
+// Build a map of import alias -> canonical package name from a file's imports
+build_import_map :: proc(file: ^ast.File, m: ^map[string]string) {
+	imports := file.imports
+	if imports == nil {
+		return
+	}
+	for imp in imports {
+		canonical := import_path_to_canonical(imp.fullpath)
+		alias := imp.name.text
+		if alias == "" {
+			// Unnamed import — use the last component of the path
+			last_slash := -1
+			for i := len(canonical) - 1; i >= 0; i -= 1 {
+				if canonical[i] == '/' {
+					last_slash = i
+					break
+				}
+			}
+			if last_slash >= 0 {
+				alias = canonical[last_slash+1:]
+			} else {
+				alias = canonical
+			}
+		}
+		m[alias] = canonical
+	}
+}
+
+// Resolve an import alias to its canonical package name
+resolve_import_alias :: proc(alias: string, import_map: ^map[string]string) -> string {
+	if resolved, ok := import_map[alias]; ok {
+		return resolved
+	}
+	// No mapping found — return alias as-is (e.g. "runtime", "core")
+	return alias
+}
+
 process_package :: proc(input_dir: string, output_dir: string, odin_package: string, total_files: ^int) {
 	pkg, ok := parser.parse_package_from_path(input_dir)
 	if !ok {
@@ -98,10 +149,14 @@ process_package :: proc(input_dir: string, output_dir: string, odin_package: str
 			continue
 		}
 
+		// Build import alias map for this file (alias -> canonical package name)
+		import_map := make(map[string]string)
+		build_import_map(file, &import_map)
+
 		// Collect procs from this file only
 		file_procs := make([dynamic]ProcInfo)
 		for decl in file.decls {
-			process_node(decl, &file_procs, path, odin_package)
+			process_node(decl, &file_procs, path, odin_package, &import_map)
 		}
 
 		if len(file_procs) == 0 {
@@ -147,15 +202,15 @@ process_package :: proc(input_dir: string, output_dir: string, odin_package: str
 	}
 }
 
-process_node :: proc(stmt: ^ast.Stmt, procs: ^[dynamic]ProcInfo, source_path: string, odin_package: string) {
+process_node :: proc(stmt: ^ast.Stmt, procs: ^[dynamic]ProcInfo, source_path: string, odin_package: string, import_map: ^map[string]string) {
 	#partial switch s in stmt.derived_stmt {
 	case ^ast.Value_Decl:
-		process_value_decl(s, procs, source_path, odin_package)
+		process_value_decl(s, procs, source_path, odin_package, import_map)
 	case:
 	}
 }
 
-process_value_decl :: proc(vd: ^ast.Value_Decl, procs: ^[dynamic]ProcInfo, source_path: string, odin_package: string) {
+process_value_decl :: proc(vd: ^ast.Value_Decl, procs: ^[dynamic]ProcInfo, source_path: string, odin_package: string, import_map: ^map[string]string) {
 	if len(vd.names) == 0 || len(vd.values) == 0 {
 		return
 	}
@@ -220,12 +275,12 @@ process_value_decl :: proc(vd: ^ast.Value_Decl, procs: ^[dynamic]ProcInfo, sourc
 			class_name   = strings.clone(class_name_pascal),
 			method_name  = strings.clone(method_name_pascal),
 			odin_name    = strings.clone(full_name),
-			return_type  = extract_return_type(proc_type),
+			return_type  = extract_return_type(proc_type, import_map),
 			source_file  = strings.clone(source_path),
 			source_line  = proc_lit.pos.line,
 			odin_package = strings.clone(odin_package),
 		}
-		append_params(&info, proc_type)
+		append_params(&info, proc_type, import_map)
 		append(procs, info)
 		return
 	}
@@ -260,24 +315,24 @@ process_value_decl :: proc(vd: ^ast.Value_Decl, procs: ^[dynamic]ProcInfo, sourc
 		class_name   = strings.clone(class_name_pascal),
 		method_name  = strings.clone(method_name_pascal),
 		odin_name    = strings.clone(full_name),
-		return_type  = extract_return_type(proc_type),
+		return_type  = extract_return_type(proc_type, import_map),
 		source_file  = strings.clone(source_path),
 		source_line  = proc_lit.pos.line,
 		odin_package = strings.clone(odin_package),
 	}
 
-	append_params(&info, proc_type)
+	append_params(&info, proc_type, import_map)
 	append(procs, info)
 }
 
-append_params :: proc(info: ^ProcInfo, proc_type: ^ast.Proc_Type) {
+append_params :: proc(info: ^ProcInfo, proc_type: ^ast.Proc_Type, import_map: ^map[string]string) {
 	if proc_type.params == nil {
 		return
 	}
 
 	params: [dynamic]ParamInfo
 	for f in proc_type.params.list {
-		param_type := extract_type_string(f.type)
+		param_type := extract_type_string(f.type, import_map)
 		for name_expr in f.names {
 			#partial switch id in name_expr.derived_expr {
 			case ^ast.Ident:
@@ -301,7 +356,7 @@ extract_param_name :: proc(field: ^ast.Field) -> string {
 	return ""
 }
 
-extract_type_string :: proc(type_expr: ^ast.Expr) -> string {
+extract_type_string :: proc(type_expr: ^ast.Expr, import_map: ^map[string]string) -> string {
 	if type_expr == nil {
 		return "void"
 	}
@@ -310,35 +365,37 @@ extract_type_string :: proc(type_expr: ^ast.Expr) -> string {
 	case ^ast.Ident:
 		return alt.name
 	case ^ast.Pointer_Type:
-		elem := extract_type_string(alt.elem)
+		elem := extract_type_string(alt.elem, import_map)
 		return fmt.tprintf("^%s", elem)
 	case ^ast.Array_Type:
-		elem := extract_type_string(alt.elem)
+		elem := extract_type_string(alt.elem, import_map)
 		return fmt.tprintf("[]%s", elem)
 	case ^ast.Dynamic_Array_Type:
-		elem := extract_type_string(alt.elem)
+		elem := extract_type_string(alt.elem, import_map)
 		return fmt.tprintf("[dynamic]%s", elem)
 	case ^ast.Selector_Expr:
-		// Preserve full qualified name (e.g., "runtime.Allocator", "unity.TestComponent")
-		return fmt.tprintf("%s.%s", alt.expr.derived_expr.(^ast.Ident).name, alt.field.name)
+		// Resolve import alias to canonical package name
+		alias := alt.expr.derived_expr.(^ast.Ident).name
+		resolved := resolve_import_alias(alias, import_map)
+		return fmt.tprintf("%s.%s", resolved, alt.field.name)
 	case ^ast.Proc_Type:
 		if alt.results == nil || len(alt.results.list) == 0 {
 			return "proc"
 		}
-		ret := extract_type_string(alt.results.list[0].type)
+		ret := extract_type_string(alt.results.list[0].type, import_map)
 		return fmt.tprintf("proc -> %s", ret)
 	}
 
 	return "<type>"
 }
 
-extract_return_type :: proc(pt: ^ast.Proc_Type) -> string {
+extract_return_type :: proc(pt: ^ast.Proc_Type, import_map: ^map[string]string) -> string {
 	if pt.results == nil || len(pt.results.list) == 0 {
 		return ""
 	}
 
 	if len(pt.results.list) == 1 {
-		return extract_type_string(pt.results.list[0].type)
+		return extract_type_string(pt.results.list[0].type, import_map)
 	}
 
 	// Multiple return values - use tuple syntax
@@ -348,7 +405,7 @@ extract_return_type :: proc(pt: ^ast.Proc_Type) -> string {
 		if i > 0 {
 			strings.write_string(&b, ", ")
 		}
-		strings.write_string(&b, extract_type_string(field.type))
+		strings.write_string(&b, extract_type_string(field.type, import_map))
 	}
 	strings.write_string(&b, ")")
 	return strings.to_string(b)
