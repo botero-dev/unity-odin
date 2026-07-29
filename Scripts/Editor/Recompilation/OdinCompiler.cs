@@ -929,7 +929,8 @@ namespace OdinInterop.Editor
 
             process.WaitForExit();
 
-            var success = process.ExitCode == 0;
+            var exitCode = process.ExitCode;
+            var success = exitCode == 0;
 
             process.Close();
 
@@ -938,7 +939,7 @@ namespace OdinInterop.Editor
                 Debug.LogFormat(success ? LogType.Log : LogType.Error, LogOption.NoStacktrace, null, "[{0}]: {1}", sn, s);
 
             sw.Stop();
-            Debug.Log($"[{sn}] Process {tgt} completed in {sw.ElapsedMilliseconds}ms (exit code {(success ? 0 : process.ExitCode)})");
+            Debug.Log($"[{sn}] Process completed in {sw.ElapsedMilliseconds}ms (exit code {exitCode})");
 
             return success;
         }
