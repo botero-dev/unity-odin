@@ -167,18 +167,43 @@ namespace OdinInterop.Editor
 
             // generate export-all bindings FIRST (they write the decl files,
             // then type-def resolution merges struct defs into them)
+            //
+            // Sort by class hierarchy depth (base classes first) so that
+            // type dependencies like EntityId are placed in the file of the
+            // highest class that uses them, not whichever class happens to
+            // be processed first.
+            var exportAllEntries = new List<(Type stubType, OdinExportAllAttribute attr)>();
             foreach (var t in TypeCache.GetTypesWithAttribute<OdinExportAllAttribute>())
             {
-                exportAllStubTypes.Add(t);
                 var attr = t.GetCustomAttribute<OdinExportAllAttribute>();
-                var targetType = attr?.TargetType;
-                if (targetType != null)
+                if (attr?.TargetType != null)
+                    exportAllEntries.Add((t, attr));
+            }
+            exportAllEntries.Sort((a, b) =>
+            {
+                int Depth(Type tt)
+                {
+                    int d = 0;
+                    while (tt != null && tt != typeof(object))
+                    {
+                        tt = tt.BaseType;
+                        d++;
+                    }
+                    return d;
+                }
+                return Depth(a.attr.TargetType).CompareTo(Depth(b.attr.TargetType));
+            });
+
+            foreach (var (t, attr) in exportAllEntries)
+            {
+                exportAllStubTypes.Add(t);
+                var targetType = attr.TargetType;
                 {
                     // Snapshot existing types so we can identify which types
                     // were discovered during this specific ExportAll codegen pass.
                     var preExistingTypes = new HashSet<Type>(s_ExportedTypesFlat);
 
-                    GenerateExportAllOdinCode(t, targetType, attr?.odinSrcAppend ?? "");
+                    GenerateExportAllOdinCode(t, targetType, attr.odinSrcAppend ?? "");
 
                     // Append type definitions discovered during this ExportAll
                     // to the class-specific .odin file.
