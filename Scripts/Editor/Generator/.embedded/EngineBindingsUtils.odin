@@ -97,15 +97,9 @@ OdnTrop_Internal_GenerateRandomNumber :: proc(data: rawptr, mode: runtime.Random
 
 
 GetGameObjectLayer :: proc(go: GameObject) -> GameObjectLayer {
-	return GameObjectLayer(u8(game_object_get_layer(go)))
+	return GameObjectLayer(u8(GameObject_get_layer(go)))
 }
 
 SetGameObjectLayer :: proc(go: GameObject, layer: GameObjectLayer) {
-	game_object_set_layer(go, i32(u8(layer)))
-}
-
-IsEnabled :: proc {
-    component_is_behaviour_enabled,
-    renderer_is_enabled,
-    collider_is_enabled,
+	GameObject_set_layer(go, i32(u8(layer)))
 }

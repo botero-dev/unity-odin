@@ -408,10 +408,10 @@ UNITY_MAIN_LOGGER: runtime.Logger : {procedure = OdnTrop_Internal_MainLogFunc, l
 
 @(private = "file")
 OdndTrop_Internal_CloneToCStringUsingTempAlloc :: proc(s: string) -> cstring {
-	data := cast([^]u8)mem_tmp(i64(len(s)) + 1, align_of(u8))
+	data := cast([^]u8)Mem_Tmp(i64(len(s)) + 1, align_of(u8))
 	if data == nil {return "__STR_ALLOC_FAILURE__"}
 
-	mem_copy(data, raw_data(s), i64(len(s)))
+	Mem_Copy(data, raw_data(s), i64(len(s)))
 	data[len(s)] = 0
 	return cast(cstring)(data)
 }
@@ -420,10 +420,10 @@ OdndTrop_Internal_CloneToCStringUsingTempAlloc :: proc(s: string) -> cstring {
 OdnTrop_Internal_DefaultTempAllocatorFunc :: proc(allocatorData: rawptr, mode: runtime.Allocator_Mode, size, alignment: int, oldMemory: rawptr, oldSize: int, loc := #caller_location) -> ([]byte, runtime.Allocator_Error) {
 	switch mode {
 	case .Alloc, .Alloc_Non_Zeroed, .Resize, .Resize_Non_Zeroed:
-		mem := mem_tmp(auto_cast size, auto_cast alignment) // allocate
+		mem := Mem_Tmp(auto_cast size, auto_cast alignment) // allocate
 		if mem == nil {return nil, .Out_Of_Memory} 	// return on fail
-		if mode == .Resize || mode == .Alloc {mem_clr(mem, auto_cast size)} 	// zero if asked
-		if (mode == .Resize || mode == .Resize_Non_Zeroed) && oldMemory != nil {mem_copy(mem, oldMemory, auto_cast (oldSize > size ? size : oldSize))} 	// copy if asked
+		if mode == .Resize || mode == .Alloc {Mem_Clr(mem, auto_cast size)} 	// zero if asked
+		if (mode == .Resize || mode == .Resize_Non_Zeroed) && oldMemory != nil {Mem_Copy(mem, oldMemory, auto_cast (oldSize > size ? size : oldSize))} 	// copy if asked
 		slice := runtime.Raw_Slice {
 			data = mem,
 			len  = auto_cast size,
@@ -487,7 +487,7 @@ OdnTrop_Internal_DefaultHeapAllocatorFunc :: proc(allocatorData: rawptr, mode: r
 		} else {
 			allocatedMem = G_GlobalState.memoryManager.Allocate(G_GlobalState.cached.heapAllocator, auto_cast space, auto_cast a, fileCStr, line)
 			if zeroMem {
-				mem_clr(allocatedMem, auto_cast space)
+				Mem_Clr(allocatedMem, auto_cast space)
 			}
 		}
 		alignedMem := rawptr(([^]u8)(allocatedMem)[size_of(rawptr):])
@@ -504,7 +504,7 @@ OdnTrop_Internal_DefaultHeapAllocatorFunc :: proc(allocatorData: rawptr, mode: r
 		([^]rawptr)(alignedMem)[-1] = allocatedMem
 
 		if forceCopy {
-			mem_copy(alignedMem, oldPtr, auto_cast (oldSize > size ? size : oldSize))
+			Mem_Copy(alignedMem, oldPtr, auto_cast (oldSize > size ? size : oldSize))
 			AlignedFree(oldPtr, fileCStr, line)
 		}
 
@@ -529,7 +529,7 @@ OdnTrop_Internal_DefaultHeapAllocatorFunc :: proc(allocatorData: rawptr, mode: r
 		if zeroMem && newSize > oldSize {
 			newRegion := raw_data(newMemory[oldSize:])
 
-			mem_clr(newRegion, auto_cast (newSize - oldSize))
+			Mem_Clr(newRegion, auto_cast (newSize - oldSize))
 		}
 		return
 	}
@@ -604,7 +604,7 @@ OdnTrop_Internal_MainLogFunc :: proc(data: rawptr, level: runtime.Logger_Level, 
 	requiresDeletion := false
 	messageCStr: cstring = ""
 	{
-		tempMem := mem_tmp(i64(messageLen) + 1, align_of(u8))
+		tempMem := Mem_Tmp(i64(messageLen) + 1, align_of(u8))
 		if tempMem == nil { 	// fallback to the main allocator
 			tempMem = G_GlobalState.memoryManager.Allocate(G_GlobalState.cached.heapAllocator, auto_cast (messageLen + 1), auto_cast align_of(u8), #file, #line)
 		}

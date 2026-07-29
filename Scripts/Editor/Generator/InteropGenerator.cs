@@ -1115,6 +1115,8 @@ namespace OdinInterop.Editor
                     var gd = ts.GetGenericTypeDefinition();
                     if (gd == typeof(Slice<>) || gd == typeof(DynamicArray<>)
                      || gd == typeof(List<>) || gd == typeof(ObjectHandle<>)) return true;
+                    if (gd == typeof(Span<>) || gd == typeof(ReadOnlySpan<>))
+                        return IsInteropSupported(ts.GetGenericArguments()[0]);
                 }
                 return false;
             }
@@ -1438,6 +1440,12 @@ namespace OdinInterop.Editor
         {
             if (s_HandledTypes.Contains(t))
                 return sb;
+
+            if (t.IsGenericParameter)
+            {
+                s_HandledTypes.Add(t);
+                return sb; // skip generic type parameters — they have no Odin representation
+            }
 
             if (t == typeof(UnityEngine.Object))
             {
