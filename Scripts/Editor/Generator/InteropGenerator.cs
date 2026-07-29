@@ -249,62 +249,50 @@ namespace OdinInterop.Editor
             return sb;
         }
 
-        private static Dictionary<Type, string> s_SourcePathCache = new Dictionary<Type, string>();
+        // Source-location manifest — populated at compile time by SourceGenerator,
+        // read at editor time via reflection. No filesystem scan needed.
+        //
+        // Each generated .g.cs file carries:
+        //   OdinInteropSourcePath    → const string, path to the original C# file
+        //   OdinInteropMethodLines   → Dictionary<string,int>, method name → line number
+        //
+        // These are consumed to annotate generated .odin files with `// Source:` comments
+        // so readers can navigate from an Odin binding to the C# definition.
+        private const BindingFlags s_ManifestFieldFlags = BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Public;
+
+        // Finds the type that holds the manifest (the user type itself for static partials,
+        // or {Name}_OdinInterop for non-static classes).
+        // NOTE: Requires the SourceGenerator DLL to be rebuilt after changes to SourceGenerator.cs.
+        //   cd Assets/UnityOdin/Scripts/Editor/.generator && dotnet build
+        private static Type FindManifestType(Type t)
+        {
+            // Static partial classes: manifest fields are on the type itself
+            if (t.GetField("OdinInteropSourcePath", s_ManifestFieldFlags) != null)
+                return t;
+
+            // Non-static classes: manifest lives on {Namespace}.{Name}_OdinInterop
+            // (top-level type, not nested — use Name/Namespace, not FullName which uses + for nesting)
+            var manifestName = string.IsNullOrEmpty(t.Namespace)
+                ? $"{t.Name}_OdinInterop"
+                : $"{t.Namespace}.{t.Name}_OdinInterop";
+            return t.Assembly.GetType(manifestName);
+        }
 
         private static string GetCSharpSourcePath(Type t)
         {
-            if (s_SourcePathCache.TryGetValue(t, out var cached))
-                return cached;
-
-            var className = t.Name;
-            var projectRoot = Path.GetDirectoryName(Application.dataPath);
-            var searchDirs = new[] { Application.dataPath, Path.Combine(projectRoot, "Packages") };
-
-            foreach (var searchDir in searchDirs)
-            {
-                if (!Directory.Exists(searchDir)) continue;
-                var files = Directory.GetFiles(searchDir, "*.cs", SearchOption.AllDirectories);
-                foreach (var file in files)
-                {
-                    var content = File.ReadAllText(file);
-                    if (content.Contains($"class {className}") || content.Contains($"struct {className}"))
-                    {
-                        var absolutePath = Path.GetFullPath(file).Replace('\\', '/');
-                        s_SourcePathCache[t] = absolutePath;
-                        return absolutePath;
-                    }
-                }
-            }
-
-            s_SourcePathCache[t] = null;
-            return null;
+            var manifestType = FindManifestType(t);
+            return (string)manifestType?.GetField("OdinInteropSourcePath", s_ManifestFieldFlags)?.GetValue(null);
         }
 
-        private static Dictionary<string, int> s_MethodLinesCache = new Dictionary<string, int>();
-
-        private static int GetMethodLineNumber(string sourcePath, string methodName)
+        private static int GetMethodLineNumber(Type t, string methodName)
         {
-            if (string.IsNullOrEmpty(sourcePath))
-                return 0;
-
-            var key = $"{sourcePath}::{methodName}";
-            if (s_MethodLinesCache.TryGetValue(key, out var cached))
-                return cached;
-
-            var lines = File.ReadAllLines(sourcePath);
-            for (int i = 0; i < lines.Length; i++)
-            {
-                var trimmed = lines[i].TrimStart();
-                if (trimmed.Contains($" {methodName}(") || trimmed.Contains($" {methodName}<"))
-                {
-                    var lineNumber = i + 1;
-                    s_MethodLinesCache[key] = lineNumber;
-                    return lineNumber;
-                }
-            }
-
-            s_MethodLinesCache[key] = 0;
-            return 0;
+            var manifestType = FindManifestType(t);
+            if (manifestType == null) return 0;
+            var dict = (Dictionary<string, int>)manifestType
+                .GetField("OdinInteropMethodLines", s_ManifestFieldFlags)?.GetValue(null);
+            if (dict == null) return 0;
+            dict.TryGetValue(methodName, out var line);
+            return line;
         }
 
         // Prefix type names that were exported by Unity (in s_ExportedTypesFlat) with "exports."
@@ -354,6 +342,11 @@ namespace OdinInterop.Editor
                 return;
 
             var fileName = tyName.StartsWith("OdinInterop_") ? tyName["OdinInterop_".Length..] : tyName;
+
+            // ── impl file: delegate types, C-callable setters, and the actual Odin wrapper logic ──
+            // Split from the decl file so that generated Odin code is readable:
+            //   • {Name}.odin       → clean #force_inline forwarding wrappers (what users read)
+            //   • {Name}_impl.odin  → delegate plumbing & interop machinery (implementation detail)
             var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, $"{fileName}_impl.odin"));
 
             s_StrBld
@@ -562,7 +555,10 @@ namespace OdinInterop.Editor
 
             File.WriteAllText(tgtFile, s_StrBld.ToString());
 
-            // Generate decl file — forwarding wrappers to _impl
+            // ── decl file: user-facing #force_inline wrappers that forward to _impl ──
+            // Annotated with C# source locations so readers can jump to the original code.
+            // This is the file users open to understand the binding — the _impl file exists
+            // solely to separate the delegate/plumbing noise from the readable API surface.
             {
                 var declFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, $"{fileName}.odin"));
                 s_StrBld
@@ -574,13 +570,15 @@ namespace OdinInterop.Editor
                     .AppendLine("@require import \"base:runtime\"")
                     .AppendLine();
 
+                // Annotate the class-level source file so readers know where this binding originates
                 var declSrcPath = GetCSharpSourcePath(t);
                 if (declSrcPath != null)
                     s_StrBld.AppendLine($"// Source: file://{declSrcPath}").AppendLine();
 
                 foreach (var exportedFn in exportedFns)
                 {
-                    var declFnLine = GetMethodLineNumber(declSrcPath, exportedFn.Name);
+                    // Per-function source annotation: exact file + line so readers can jump to the C# definition
+                    var declFnLine = GetMethodLineNumber(t, exportedFn.Name);
                     if (declFnLine > 0)
                         s_StrBld.AppendIndent().AppendLine($"// Source: file://{declSrcPath}#L{declFnLine}");
 

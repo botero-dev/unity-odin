@@ -197,11 +197,6 @@ namespace OdinInterop.SourceGenerator
             // set up p/invoke friendly-wrappers for exported functions
             foreach (var method in exportedMethods)
             {
-                if (method.Name == "comp")
-                {
-                    continue;
-                }
-
                 sb.AppendIndent(sbIndent)
                     .Append("[AOT.MonoPInvokeCallback(typeof(odntrop_del_")
                     .Append(method.Name)
@@ -645,6 +640,36 @@ namespace OdinInterop.SourceGenerator
                 sb.AppendLine();
             }
 
+            // ── interop manifest: source locations for generated .odin files ──
+            // Emitted here because Roslyn symbols carry exact file/line info for free.
+            // InteropGenerator reads these via reflection at editor time to annotate
+            // the generated .odin declarations with `// Source: file://...#L42` comments,
+            // so users can jump from an Odin binding straight to the C# definition.
+            {
+                var sourceFilePath = classSymbol.Locations.FirstOrDefault()?.SourceTree?.FilePath?.Replace('\\', '/') ?? "";
+                sb.AppendLine();
+                sb.AppendIndent(sbIndent).Append("internal const string OdinInteropSourcePath = \"")
+                    .Append(sourceFilePath).AppendLine("\";");
+
+                var allMethods = exportedMethods.Concat(importedMethods).ToList();
+                if (allMethods.Count > 0)
+                {
+                    sb.AppendLine();
+                    sb.AppendIndent(sbIndent).AppendLine(
+                        "internal static readonly System.Collections.Generic.Dictionary<string, int> OdinInteropMethodLines = new() {");
+                    sbIndent++;
+                    foreach (var method in allMethods)
+                    {
+                        var loc = method.Locations.FirstOrDefault();
+                        var line = loc?.GetLineSpan().StartLinePosition.Line + 1 ?? 0;
+                        sb.AppendIndent(sbIndent)
+                            .Append("[\"").Append(method.Name).Append("\"] = ").Append(line).AppendLine(",");
+                    }
+                    sbIndent--;
+                    sb.AppendIndent(sbIndent).AppendLine("};");
+                }
+            }
+
             // close class
             sbIndent--;
             sb.AppendIndent(sbIndent).AppendLine("}");
@@ -786,8 +811,6 @@ namespace OdinInterop.SourceGenerator
                     sb.Append(" ");
                 }
                 sb.Append(par.Name);
-
-
 
                 if (varIsProxy && !useInteroperableVersion.HasValue)
                 {
