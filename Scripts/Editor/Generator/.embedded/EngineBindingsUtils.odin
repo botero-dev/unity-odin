@@ -3,7 +3,7 @@ package exports
 @require import "base:runtime"
 
 UnityPanic :: proc(prefix, message: string, loc := #caller_location) -> ! {
-	panic_fatal(prefix, message, loc.procedure, loc.file_path, loc.line, loc.column)
+	Panic_Fatal(prefix, message, loc.procedure, loc.file_path, loc.line, loc.column)
 	panic(message)
 }
 
@@ -17,24 +17,24 @@ OdnTrop_Internal_GenerateRandomNumber :: proc(data: rawptr, mode: runtime.Random
 	case .Read:
 		orSt: RandomState = ---
 		if rd != nil {
-			orSt = random_get_state() // save original state
-			random_set_state(rd^) // apply custom state
+			orSt = Random_get_state() // save original state
+			Random_set_state(rd^) // apply custom state
 		}
 
 		switch len(p) {
 		case size_of(u32):
-			val := cast(u32)random_get_next_int()
+			val := cast(u32)Random_GetNextInt()
 			((^u32)(raw_data(p)))^ = val
 		case size_of(u64):
-			valFirst: u32 = cast(u32)random_get_next_int()
-			valSecond: u32 = cast(u32)random_get_next_int()
+			valFirst: u32 = cast(u32)Random_GetNextInt()
+			valSecond: u32 = cast(u32)Random_GetNextInt()
 			val: u64 = u64(valFirst) | (u64(valSecond) << 32)
 			((^u64)(raw_data(p)))^ = val
 		case size_of([2]u64):
-			valFirstQ: u32 = cast(u32)random_get_next_int()
-			valSecondQ: u32 = cast(u32)random_get_next_int()
-			valThirdQ: u32 = cast(u32)random_get_next_int()
-			valFourthQ: u32 = cast(u32)random_get_next_int()
+			valFirstQ: u32 = cast(u32)Random_GetNextInt()
+			valSecondQ: u32 = cast(u32)Random_GetNextInt()
+			valThirdQ: u32 = cast(u32)Random_GetNextInt()
+			valFourthQ: u32 = cast(u32)Random_GetNextInt()
 			valFirstH: u64 = u64(valFirstQ) | (u64(valSecondQ) << 32)
 			valSecondH: u64 = u64(valThirdQ) | (u64(valFourthQ) << 32)
 			val: [2]u64 = {valFirstH, valSecondH}
@@ -44,7 +44,7 @@ OdnTrop_Internal_GenerateRandomNumber :: proc(data: rawptr, mode: runtime.Random
 			val := u32(0)
 			for &v in p {
 				if pos == 0 {
-					val = cast(u32)random_get_next_int()
+					val = cast(u32)Random_GetNextInt()
 					pos = 3
 				}
 				v = byte(val)
@@ -54,8 +54,8 @@ OdnTrop_Internal_GenerateRandomNumber :: proc(data: rawptr, mode: runtime.Random
 		}
 
 		if rd != nil {
-			rd^ = random_get_state() // store new state for the custom one
-			random_set_state(orSt) // restore original state for the default one
+			rd^ = Random_get_state() // store new state for the custom one
+			Random_set_state(orSt) // restore original state for the default one
 		}
 	case .Reset:
 		seed: i32 = 0
@@ -74,14 +74,14 @@ OdnTrop_Internal_GenerateRandomNumber :: proc(data: rawptr, mode: runtime.Random
 
 		orSt: RandomState = ---
 		if rd != nil {
-			orSt = random_get_state() // save original state
-			random_set_state(rd^) // apply custom state
+			orSt = Random_get_state() // save original state
+			Random_set_state(rd^) // apply custom state
 		}
 
-		random_init_state(seed)
+		Random_InitState(seed)
 		if rd != nil {
-			rd^ = random_get_state() // store new state for the custom one
-			random_set_state(orSt) // restore original state for the default one
+			rd^ = Random_get_state() // store new state for the custom one
+			Random_set_state(orSt) // restore original state for the default one
 		}
 
 	case .Query_Info:
@@ -94,15 +94,7 @@ OdnTrop_Internal_GenerateRandomNumber :: proc(data: rawptr, mode: runtime.Random
 	}
 }
 
-InstantiateObject :: proc {
-	object_instantiate_without_transform,
-	object_instantiate_with_transform,
-}
 
-GetTransform :: proc {
-	game_object_get_transform_from,
-	component_get_transform_from,
-}
 
 GetGameObjectLayer :: proc(go: GameObject) -> GameObjectLayer {
 	return GameObjectLayer(u8(game_object_get_layer(go)))

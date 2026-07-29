@@ -1,16 +1,17 @@
 using Random = UnityEngine.Random;
 
-namespace OdinInterop
+namespace OdinExports
 {
-    [OdinExport]
-    internal static unsafe partial class UnityRandom
-    {
-        private static void InitState(int seed) => Random.InitState(seed);
+    [OdinInterop.OdinExportAll(typeof(UnityEngine.Random))]
+    [OdinInterop.OdinExport]
+    internal static partial class Random {
+    // {
+    //     public static void InitState(int seed) => Random.InitState(seed);
 
-        private static Random.State GetState() => Random.state;
+    //     public static Random.State GetState() => Random.state;
 
-        private static void SetState(Random.State state) => Random.state = state;
+    //     public static void SetState(Random.State state) => Random.state = state;
 
-        private static int GetNextInt() => Random.Range(int.MinValue, int.MaxValue);
+        internal static int GetNextInt() => UnityEngine.Random.Range(int.MinValue, int.MaxValue);
     }
 }

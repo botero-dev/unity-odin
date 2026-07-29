@@ -65,7 +65,7 @@ namespace OdinInterop
 
             string path = "";
             ulong timeStamp = 0;
-            if (Application.platform == RuntimePlatform.Android)
+            if (UnityEngine.Application.platform == RuntimePlatform.Android)
                 path = FindLatestLibraryForAndroid(out timeStamp);
 
             if (currentTimeStamp >= timeStamp && currentPath != "") // newer current timestamp and valid current path
@@ -114,7 +114,7 @@ namespace OdinInterop
         private static string FindLatestLibraryForAndroid(out ulong best)
         {
             best = 0;
-            var searchDir = "/data/data/" + Application.identifier + "/files/hotlibs/";
+            var searchDir = "/data/data/" + UnityEngine.Application.identifier + "/files/hotlibs/";
             if (!Directory.Exists(searchDir))
                 return k_FallbackLibraryName;
 

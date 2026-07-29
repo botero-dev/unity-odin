@@ -4,6 +4,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Text;
 
@@ -24,8 +25,11 @@ namespace OdinInterop.SourceGenerator
             var compilation = ctx.Compilation;
 
             var sb = new StringBuilder();
+            var usedFileNames = new HashSet<string>();
             foreach (var classDeclaration in rx.candidateClasses)
             {
+                try
+                {
                 var model = compilation.GetSemanticModel(classDeclaration.SyntaxTree);
                 var classSymbol = model.GetDeclaredSymbol(classDeclaration);
 
@@ -40,6 +44,10 @@ namespace OdinInterop.SourceGenerator
                 if (!hasExport && !hasImport && !hasExportAll)
                     continue;
 
+                var fileName = $"{classSymbol.GetFullTypeName()}.g.cs";
+                if (!usedFileNames.Add(fileName))
+                    continue; // already processed (e.g. partial across files)
+
                 sb.Clear();
 
                 if (hasExportAll)
@@ -47,20 +55,52 @@ namespace OdinInterop.SourceGenerator
                     var exportAllAttr = attrs.First(a => a.AttributeClass?.GetFullTypeName() == "OdinInterop.OdinExportAllAttribute");
                     var targetTypeSymbol = exportAllAttr.ConstructorArguments.FirstOrDefault().Value as INamedTypeSymbol;
                     if (targetTypeSymbol != null)
-                        GenerateExportAllCode(sb, classSymbol, targetTypeSymbol);
+                        GenerateExportAllCode(sb, classSymbol, targetTypeSymbol, skipClosingBraces: hasExport || hasImport);
                 }
-                else
+
+                if (hasExport || hasImport)
                 {
                     var mode = hasExport ? InteropMode.Export : InteropMode.Import;
-                    GenerateInteropCode(sb, classSymbol, mode);
+                    GenerateInteropCode(sb, classSymbol, mode, skipBoilerplate: hasExportAll);
+                }
+
+                // Emit closing braces if ExportAll skipped them (Export/Import also present)
+                if (hasExportAll && (hasExport || hasImport))
+                {
+                    var hasNs = !string.IsNullOrEmpty(classSymbol.ContainingNamespace?.Name) &&
+                                classSymbol.ContainingNamespace.Name != "<global namespace>";
+                    if (hasNs)
+                    {
+                        sb.Append('\t').AppendLine("}");
+                        sb.AppendLine("}");
+                    }
+                    else
+                    {
+                        sb.AppendLine("}");
+                    }
                 }
 
                 if (sb.Length != 0)
                 {
-                    var fileName = $"{classSymbol.GetFullTypeName()}.g.cs";
                     ctx.AddSource(fileName, SourceText.From(sb.ToString(), Encoding.UTF8));
+                    // Debug: write to disk
+                    try
+                    {
+                        var debugDir = Path.Combine(Path.GetDirectoryName(classSymbol.Locations.FirstOrDefault()?.SourceTree?.FilePath ?? ".") ?? ".", ".gen-debug");
+                        Directory.CreateDirectory(debugDir);
+                        File.WriteAllText(Path.Combine(debugDir, fileName), sb.ToString());
+                    }
+                    catch { }
                 }
-                sb.Clear();
+                }
+                catch (Exception ex)
+                {
+                    ctx.ReportDiagnostic(Diagnostic.Create(
+                        new DiagnosticDescriptor("ODIN001", "OdinInterop Source Generator Error",
+                            $"Failed to generate interop code: {ex.Message}\n{ex.StackTrace}",
+                            "OdinInterop", DiagnosticSeverity.Error, true),
+                        classDeclaration.GetLocation()));
+                }
             }
         }
 
@@ -70,9 +110,12 @@ namespace OdinInterop.SourceGenerator
             Import   // Odin -> C#: only process imported methods
         }
 
-        private void GenerateInteropCode(StringBuilder sb, INamedTypeSymbol classSymbol, InteropMode mode)
+        private void GenerateInteropCode(StringBuilder sb, INamedTypeSymbol classSymbol, InteropMode mode, bool skipBoilerplate = false)
         {
-            var sbIndent = 0;
+            var sbIndent = skipBoilerplate
+                ? (string.IsNullOrEmpty(classSymbol.ContainingNamespace?.Name) ||
+                   classSymbol.ContainingNamespace.Name == "<global namespace>" ? 1 : 2)
+                : 0;
 
             var tyName = classSymbol.GetFullTypeName().Replace('.', '_');
             var instTypeName = classSymbol.Name;
@@ -111,6 +154,8 @@ namespace OdinInterop.SourceGenerator
                     .ToList() ?? new List<IMethodSymbol>();
             }
 
+            if (!skipBoilerplate)
+            {
             sb.AppendLine("using OdinInterop;");
             sb.AppendLine("using System;");
             sb.AppendLine("using System.Collections.Generic;");
@@ -166,6 +211,7 @@ namespace OdinInterop.SourceGenerator
             sb.AppendLine("#endif");
             sb.AppendLine();
             sbIndent--;
+            }
 
             // Helper: append instance parameter with comma handling
             void AppendInstanceParam(bool hasMoreParams)
@@ -391,6 +437,8 @@ namespace OdinInterop.SourceGenerator
             }
 
             // editor-specific code (hot-reload style)
+            if (!skipBoilerplate)
+            {
             sb.AppendLine("#if UNITY_EDITOR || ODININTEROP_RUNTIME_RELOADING");
             sb.AppendLine();
 
@@ -528,6 +576,7 @@ namespace OdinInterop.SourceGenerator
 
             sb.AppendLine("#endif");
             sb.AppendLine();
+            } // !skipBoilerplate
 
             // wrapper for the user to call
             foreach (var method in importedMethods)
@@ -653,11 +702,8 @@ namespace OdinInterop.SourceGenerator
                 sb.AppendLine();
             }
 
-            // ── interop manifest: source locations for generated .odin files ──
-            // Emitted here because Roslyn symbols carry exact file/line info for free.
-            // InteropGenerator reads these via reflection at editor time to annotate
-            // the generated .odin declarations with `// Source: file://...#L42` comments,
-            // so users can jump from an Odin binding straight to the C# definition.
+            // ── interop manifest (skip when combined with ExportAll which emits its own) ──
+            if (!skipBoilerplate)
             {
                 var sourceFilePath = classSymbol.Locations.FirstOrDefault()?.SourceTree?.FilePath?.Replace('\\', '/') ?? "";
                 sb.AppendLine();
@@ -702,18 +748,21 @@ namespace OdinInterop.SourceGenerator
                         sb.AppendIndent(sbIndent).AppendLine("};");
                     }
                 }
-            }
+            } // !skipBoilerplate
 
             // close class
-            sbIndent--;
-            sb.AppendIndent(sbIndent).AppendLine("}");
-
-            // close namespace
-            if (!string.IsNullOrEmpty(classSymbol.ContainingNamespace?.Name) &&
-                classSymbol.ContainingNamespace.Name != "<global namespace>")
+            if (!skipBoilerplate)
             {
                 sbIndent--;
-                sb.AppendLine("}");
+                sb.AppendIndent(sbIndent).AppendLine("}");
+
+                // close namespace
+                if (!string.IsNullOrEmpty(classSymbol.ContainingNamespace?.Name) &&
+                    classSymbol.ContainingNamespace.Name != "<global namespace>")
+                {
+                    sbIndent--;
+                    sb.AppendLine("}");
+                }
             }
         }
 
@@ -726,13 +775,13 @@ namespace OdinInterop.SourceGenerator
         /// so each overload has a unique Odin name (e.g. Emit, Emit_i32, Emit_Particle).
         /// Methods from System.Object (ToString, Equals, etc.) and property accessors are skipped.
         /// </summary>
-        private void GenerateExportAllCode(StringBuilder sb, INamedTypeSymbol classSymbol, INamedTypeSymbol targetTypeSymbol)
+        private void GenerateExportAllCode(StringBuilder sb, INamedTypeSymbol classSymbol, INamedTypeSymbol targetTypeSymbol, bool skipClosingBraces = false)
         {
             var sbIndent = 0;
             var tyName = classSymbol.GetFullTypeName().Replace('.', '_');
             var instParamName = $"_{targetTypeSymbol.Name}";
 
-            // Enumerate public instance methods of the target type.
+            // Enumerate public methods of the target type (both instance and static).
             // Skip methods with non-Unity-Object custom-marshalled types (no interop mapping exists yet).
             bool IsInteropSupported(ITypeSymbol ts) =>
                 (ts.GetInteroperabilityType() != InteroperabilityType.CustomMarshalled || ts.IsUnityObject())
@@ -741,10 +790,7 @@ namespace OdinInterop.SourceGenerator
             var allMethods = targetTypeSymbol.GetMembers()
                 .OfType<IMethodSymbol>()
                 .Where(m => m.MethodKind == MethodKind.Ordinary
-                         && !m.IsStatic
                          && m.DeclaredAccessibility == Accessibility.Public
-                         && !m.Name.StartsWith("get_")
-                         && !m.Name.StartsWith("set_")
                          && !m.Name.StartsWith("add_")
                          && !m.Name.StartsWith("remove_")
                          && !m.Name.StartsWith("odntrop_")
@@ -773,6 +819,23 @@ namespace OdinInterop.SourceGenerator
                     {
                         var suffix = m.Parameters.Length == 0 ? "void" : string.Join("_", m.Parameters.Select(p => p.Name));
                         odinNames[m] = $"{targetTypeSymbol.Name}_{name}_{suffix}";
+                    }
+                    // Detect collisions from identical parameter names — fall back to type-based suffix
+                    var usedNames = new HashSet<string>();
+                    foreach (var m in methods)
+                    {
+                        if (!usedNames.Add(odinNames[m]))
+                        {
+                            // Collision! Recompute with type-based suffixes for all colliding methods
+                            foreach (var mc in methods)
+                            {
+                                usedNames.Clear();
+                                var nameSuffix = mc.Parameters.Length == 0 ? "void" : string.Join("_", mc.Parameters.Select(p => p.Name));
+                                var typeSuffix = mc.Parameters.Length == 0 ? "void" : string.Join("_", mc.Parameters.Select(p => p.Type.Name));
+                                odinNames[mc] = $"{targetTypeSymbol.Name}_{name}_{typeSuffix}";
+                            }
+                            break;
+                        }
                     }
                 }
             }
@@ -827,7 +890,7 @@ namespace OdinInterop.SourceGenerator
                 sb.AppendIndent(sbIndent).Append("private delegate ");
                 sb.AppendReturnType(method, true);
                 sb.Append($" odntrop_del_{odinName}(");
-                AppendInstanceParam(method.Parameters.Length > 0);
+                if (!method.IsStatic) { AppendInstanceParam(method.Parameters.Length > 0); }
                 sb.AppendParameters(method.Parameters, true);
                 sb.AppendLine(");");
                 sb.AppendLine();
@@ -855,25 +918,27 @@ namespace OdinInterop.SourceGenerator
                     .Append(" odntrop_exported_")
                     .Append(odinName)
                     .Append("(");
-                sb.Append("RawObjectHandle ").Append(instParamName);
-                if (method.Parameters.Length > 0) sb.Append(", ");
+                if (!method.IsStatic) { sb.Append("RawObjectHandle ").Append(instParamName); if (method.Parameters.Length > 0) sb.Append(", "); }
                 sb.AppendParameters(method.Parameters, true);
                 sb.AppendLine(")");
                 sb.AppendIndent(sbIndent).AppendLine("{");
                 sbIndent++;
 
-                // Instance conversion: RawObjectHandle → target type
-                sb.AppendIndent(sbIndent)
-                    .AppendTypeName(targetTypeSymbol, false)
-                    .Append(" ")
-                    .Append(instParamName)
-                    .Append("_proxy = (")
-                    .AppendTypeName(targetTypeSymbol, false)
-                    .Append(")(OdinInterop.ObjectHandle<")
-                    .AppendTypeName(targetTypeSymbol, false)
-                    .Append(">)")
-                    .Append(instParamName)
-                    .AppendLine(";");
+                // Instance conversion: RawObjectHandle → target type (only for non-static methods)
+                if (!method.IsStatic)
+                {
+                    sb.AppendIndent(sbIndent)
+                        .AppendTypeName(targetTypeSymbol, false)
+                        .Append(" ")
+                        .Append(instParamName)
+                        .Append("_proxy = (")
+                        .AppendTypeName(targetTypeSymbol, false)
+                        .Append(")(OdinInterop.ObjectHandle<")
+                        .AppendTypeName(targetTypeSymbol, false)
+                        .Append(">)")
+                        .Append(instParamName)
+                        .AppendLine(";");
+                }
 
                 // Auto-converting parameter proxies
                 foreach (var par in method.Parameters)
@@ -924,7 +989,14 @@ namespace OdinInterop.SourceGenerator
                     else if (method.ReturnsByRefReadonly)
                         sb.Append("ref readonly ");
                 }
-                sb.Append(instParamName).Append("_proxy.").Append(method.Name).Append("(");
+                if (!method.IsStatic)
+                {
+                    sb.Append(instParamName).Append("_proxy.").Append(method.Name).Append("(");
+                }
+                else
+                {
+                    sb.AppendTypeName(targetTypeSymbol, false).Append(".").Append(method.Name).Append("(");
+                }
                 sb.AppendParameters(method.Parameters, null);
                 sb.AppendLine(");");
 
@@ -956,6 +1028,19 @@ namespace OdinInterop.SourceGenerator
                     }
                 }
 
+                // Convert return value to interop type for Unity Object returns
+                var retValName = "odntrop_internal_RetValXXX";
+                if (!method.ReturnsVoid
+                    && method.ReturnType.GetInteroperabilityType() == InteroperabilityType.CustomMarshalled
+                    && method.ReturnType.IsUnityObject())
+                {
+                    sb.AppendIndent(sbIndent)
+                        .Append("OdinInterop.RawObjectHandle odntrop_internal_RetValXXX_interop = (OdinInterop.RawObjectHandle)(OdinInterop.ObjectHandle<")
+                        .AppendTypeName(method.ReturnType, false)
+                        .AppendLine(">)odntrop_internal_RetValXXX;");
+                    retValName = "odntrop_internal_RetValXXX_interop";
+                }
+
                 // Return statement
                 if (!method.ReturnsVoid)
                 {
@@ -965,7 +1050,7 @@ namespace OdinInterop.SourceGenerator
                         sb.Append("ref ");
                     else if (method.ReturnsByRefReadonly)
                         sb.Append("ref readonly ");
-                    sb.AppendLine("odntrop_internal_RetValXXX;");
+                    sb.Append(retValName).AppendLine(";");
                 }
 
                 sbIndent--;
@@ -1080,6 +1165,8 @@ namespace OdinInterop.SourceGenerator
                 }
             }
 
+            if (!skipClosingBraces)
+            {
             // close class
             sbIndent--;
             sb.AppendIndent(sbIndent).AppendLine("}");
@@ -1090,6 +1177,7 @@ namespace OdinInterop.SourceGenerator
             {
                 sbIndent--;
                 sb.AppendLine("}");
+            }
             }
         }
 
@@ -1454,7 +1542,7 @@ namespace OdinInterop.SourceGenerator
                     }
                     else
                     {
-                        s = null;
+                        s = fullName;
                     }
                     break;
             }
@@ -1531,7 +1619,7 @@ namespace OdinInterop.SourceGenerator
                 return true;
             }
 
-            var isObj = type.BaseType.IsUnityObject();
+            var isObj = type.BaseType?.IsUnityObject() ?? false;
             s_UnityObjectsCache[type] = isObj;
             return isObj;
         }
