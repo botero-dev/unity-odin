@@ -25,6 +25,24 @@ namespace OdinInterop
     }
 
     /// <summary>
+    /// Auto-generates export bindings for ALL public instance methods of the target type.
+    /// The annotated class body stays empty — both generators derive method info from the target.
+    /// Overloaded methods are disambiguated by appending parameter type suffixes to the Odin name.
+    /// </summary>
+    [AttributeUsage(AttributeTargets.Class)]
+    public class OdinExportAllAttribute : Attribute
+    {
+        public Type TargetType { get; }
+
+        public OdinExportAllAttribute(Type targetType)
+        {
+            TargetType = targetType;
+        }
+
+        public string odinSrcAppend { get; set; } = "";
+    }
+
+    /// <summary>
     /// Declares the foreign (Odin) function that backs a C# import method.
     /// Carries the original Odin name, return type, and parameter types so the
     /// InteropGenerator can produce correct Odin wrapper code.

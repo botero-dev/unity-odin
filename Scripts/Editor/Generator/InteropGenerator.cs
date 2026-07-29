@@ -38,6 +38,7 @@ namespace OdinInterop.Editor
             s_ExportedTypesFlat.Clear();
             s_ExportedTypesByNamespace.Clear();
             s_HandledTypes.Clear();
+            s_ImplBld.Clear();
 
             // create a clean odn out dir
             {
@@ -177,6 +178,15 @@ namespace OdinInterop.Editor
                 GenerateImportOdinCode(t, attr?.odinSrcAppend ?? "");
             }
 
+            // generate export-all bindings (auto-export all public instance methods of a target type)
+            foreach (var t in TypeCache.GetTypesWithAttribute<OdinExportAllAttribute>())
+            {
+                var attr = t.GetCustomAttribute<OdinExportAllAttribute>();
+                var targetType = attr?.TargetType;
+                if (targetType != null)
+                    GenerateExportAllOdinCode(t, targetType, attr?.odinSrcAppend ?? "");
+            }
+
             // export types — one file per C# namespace (sub-namespaces use underscore, e.g. UnityEngine_Audio.odin)
             {
                 // per-namespace builders that accumulate across recursive resolution passes
@@ -228,16 +238,46 @@ namespace OdinInterop.Editor
                     }
                 }
 
-                // write all accumulated per-namespace buffers to files
+                // Write type-def files, merging with any decl content (without duplicate headers)
                 foreach (var kvp in namespaceBuilders)
                 {
                     var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, $"{kvp.Key}.odin"));
-                    File.WriteAllText(tgtFile, kvp.Value.ToString());
+                    var existing = "";
+                    if (File.Exists(tgtFile))
+                    {
+                        var lines = File.ReadAllLines(tgtFile);
+                        // Skip header lines that are duplicated in the type-def output
+                        int skip = 0;
+                        while (skip < lines.Length && (
+                            lines[skip].StartsWith("//") ||
+                            lines[skip].StartsWith("#+vet") ||
+                            lines[skip].StartsWith("package ") ||
+                            lines[skip].StartsWith("@require") ||
+                            lines[skip].Length == 0))
+                            skip++;
+                        existing = string.Join("\n", lines.Skip(skip)) + "\n";
+                    }
+                    File.WriteAllText(tgtFile, kvp.Value.ToString() + "\n" + existing);
                 }
+            }
+
+            // Write the single shared _impl.odin with all delegate plumbing
+            if (s_ImplBld.Length > 0)
+            {
+                var implFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, "interop_impl.odin"));
+                var implHeader = new StringBuilder()
+                    .AppendLine("// THIS IS A GENERATED FILE - DO NOT MODIFY OR YOUR CHANGES WILL BE LOST!")
+                    .AppendLine("#+vet !tabs !unused !style")
+                    .AppendLine("package exports")
+                    .AppendLine()
+                    .AppendLine("@require import \"base:runtime\"")
+                    .AppendLine();
+                File.WriteAllText(implFile, implHeader.ToString() + s_ImplBld.ToString());
             }
         }
 
         private static StringBuilder s_StrBld = new StringBuilder(16384);
+        private static StringBuilder s_ImplBld = new StringBuilder(65536); // accumulated _impl content for all exports
         private static int s_StrBldIndent = 0;
         private static StringBuilder AppendIndent(this StringBuilder sb)
         {
@@ -322,8 +362,9 @@ namespace OdinInterop.Editor
             var className = t.Name;
             var instName = $"_{className}";
 
-            var exportedFns = t.GetMethods(BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+            var exportedFns = t.GetMethods(BindingFlags.Public | BindingFlags.NonPublic | BindingFlags.Static | BindingFlags.Instance | BindingFlags.DeclaredOnly)
                 .Where(x => !x.Name.StartsWith("odntrop_"))
+                .Where(x => x.IsAssembly || x.IsPublic)
                 .ToArray();
 
             // User-facing Odin wrapper names: class prefix (minus "Unity") + snake_case method
@@ -332,10 +373,9 @@ namespace OdinInterop.Editor
                 if (cleanTyName == "")
                 {
                     var classStem = className.StartsWith("Unity") ? className["Unity".Length..] : className;
-                    var classSnake = ToSnakeCase(classStem);
-                    return $"{classSnake}_{ToSnakeCase(m.Name)}";
+                    return $"{classStem}_{m.Name}";
                 }
-                return $"{cleanTyName}{underScoreIfCleanTyName}{ToSnakeCase(m.Name)}";
+                return $"{cleanTyName}{underScoreIfCleanTyName}{m.Name}";
             }
 
             if (exportedFns.Length == 0)
@@ -343,21 +383,10 @@ namespace OdinInterop.Editor
 
             var fileName = tyName.StartsWith("OdinInterop_") ? tyName["OdinInterop_".Length..] : tyName;
 
-            // ── impl file: delegate types, C-callable setters, and the actual Odin wrapper logic ──
-            // Split from the decl file so that generated Odin code is readable:
-            //   • {Name}.odin       → clean #force_inline forwarding wrappers (what users read)
-            //   • {Name}_impl.odin  → delegate plumbing & interop machinery (implementation detail)
-            var tgtFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, $"{fileName}_impl.odin"));
+            // ── impl file content: delegate types, C-callable setters, and Odin wrapper logic ──
+            // Accumulated into a single shared _impl.odin for all exports.
 
-            s_StrBld
-                .Clear()
-                .AppendLine("// THIS IS A GENERATED FILE - DO NOT MODIFY OR YOUR CHANGES WILL BE LOST!")
-                .AppendLine("#+vet !tabs !unused !style")
-                .AppendLine("package exports")
-                .AppendLine()
-                .AppendLine("@require import \"base:runtime\"")
-                .AppendLine();
-
+            s_StrBld.Clear();
             foreach (var exportedFn in exportedFns)
             {
                 // delegate signature type
@@ -553,7 +582,7 @@ namespace OdinInterop.Editor
             if (!string.IsNullOrWhiteSpace(odinSrcAppend))
                 s_StrBld.AppendLine(odinSrcAppend);
 
-            File.WriteAllText(tgtFile, s_StrBld.ToString());
+            s_ImplBld.Append(s_StrBld.ToString());
 
             // ── decl file: user-facing #force_inline wrappers that forward to _impl ──
             // Annotated with C# source locations so readers can jump to the original code.
@@ -575,8 +604,17 @@ namespace OdinInterop.Editor
                 if (declSrcPath != null)
                     s_StrBld.AppendLine($"// Source: file://{declSrcPath}").AppendLine();
 
+                // Read doc comments emitted by SourceGenerator
+                var manifestType = FindManifestType(t);
+                var docComments = (Dictionary<string, string>)manifestType?
+                    .GetField("OdinInteropComments", s_ManifestFieldFlags)?.GetValue(null);
+
                 foreach (var exportedFn in exportedFns)
                 {
+                    // Emit doc comment from C# source if available
+                    if (docComments != null && docComments.TryGetValue(exportedFn.Name, out var comment))
+                        s_StrBld.AppendIndent().AppendLine($"// {comment}");
+
                     // Per-function source annotation: exact file + line so readers can jump to the C# definition
                     var declFnLine = GetMethodLineNumber(t, exportedFn.Name);
                     if (declFnLine > 0)
@@ -786,6 +824,223 @@ namespace OdinInterop.Editor
             File.WriteAllText(tgtFile, s_StrBld.ToString());
         }
 
+        /// <summary>
+        /// Generates .odin export files for ALL public instance methods of targetType.
+        /// stubType is the class carrying [OdinExportAll(typeof(targetType))] — its name
+        /// is used for the generated Odin file naming and tyName prefix.
+        ///
+        /// Overloaded methods get parameter-type suffixes (same convention as SourceGenerator).
+        /// </summary>
+        private static void GenerateExportAllOdinCode(Type stubType, Type targetType, string odinSrcAppend)
+        {
+            var tyName = stubType.FullName.Replace('+', '.').Replace('.', '_');
+            var cleanTyName = tyName.StartsWith("OdinInterop_") ? "" : tyName;
+            var underScoreIfCleanTyName = cleanTyName == "" ? "" : "_";
+            var instName = char.ToLowerInvariant(targetType.Name[0]) + targetType.Name.Substring(1);
+
+            // Enumerate public instance methods (same filtering as SourceGenerator).
+            // Skip methods with non-Unity-Object custom-marshalled types.
+            static bool IsInteropSupported(Type ts)
+            {
+                if (ts.IsPrimitive || ts == typeof(void) || ts == typeof(string)) return true;
+                if (ts.IsEnum) return true;
+                if (ts.IsPointer) return IsInteropSupported(ts.GetElementType());
+                if (typeof(UnityEngine.Object).IsAssignableFrom(ts)) return true;
+                if (ts == typeof(Vector2) || ts == typeof(Vector3) || ts == typeof(Vector4)
+                 || ts == typeof(Quaternion) || ts == typeof(Color) || ts == typeof(Color32)
+                 || ts == typeof(LayerMask)) return true;
+                if (ts.Namespace != null && ts.Namespace.StartsWith("Unity.Collections")) return false; // NativeArray etc.
+                if (UnsafeUtility.IsUnmanaged(ts) && ts.IsValueType) return true;
+                if (ts.IsGenericType)
+                {
+                    var gd = ts.GetGenericTypeDefinition();
+                    if (gd == typeof(Slice<>) || gd == typeof(DynamicArray<>)
+                     || gd == typeof(List<>) || gd == typeof(ObjectHandle<>)) return true;
+                }
+                return false;
+            }
+
+            var allMethods = targetType.GetMethods(BindingFlags.Public | BindingFlags.Instance | BindingFlags.DeclaredOnly)
+                .Where(m => !m.IsSpecialName
+                         && !m.Name.StartsWith("get_")
+                         && !m.Name.StartsWith("set_")
+                         && !m.Name.StartsWith("add_")
+                         && !m.Name.StartsWith("remove_")
+                         && !m.Name.StartsWith("odntrop_")
+                         && m.DeclaringType != typeof(object)
+                         && !Attribute.IsDefined(m, typeof(ObsoleteAttribute))
+                         && m.GetParameters().All(p => p.ParameterType != typeof(IntPtr))
+                         && IsInteropSupported(m.ReturnType)
+                         && m.GetParameters().All(p => IsInteropSupported(p.ParameterType)))
+                .ToArray();
+
+            if (allMethods.Length == 0)
+                return;
+
+            // Compute overload-safe Odin names
+            var methodGroups = allMethods.GroupBy(m => m.Name).ToDictionary(g => g.Key, g => g.ToArray());
+            var odinNames = new Dictionary<MethodInfo, string>();
+            foreach (var (name, methods) in methodGroups)
+            {
+                if (methods.Length == 1)
+                {
+                    odinNames[methods[0]] = $"{targetType.Name}_{name}";
+                }
+                else
+                {
+                    foreach (var m in methods)
+                    {
+                        var suffix = m.GetParameters().Length == 0 ? "void" : string.Join("_", m.GetParameters().Select(p => p.Name));
+                        odinNames[m] = $"{targetType.Name}_{name}_{suffix}";
+                    }
+                }
+            }
+
+            var fileName = tyName.StartsWith("OdinInterop_") ? tyName["OdinInterop_".Length..] : tyName;
+
+            // ── impl file content (accumulated into shared _impl.odin) ──
+
+            s_StrBld.Clear();
+            foreach (var m in allMethods)
+            {
+                var odinName = odinNames[m];
+
+                // delegate signature type
+                s_StrBld.AppendIndent().AppendLine("@(private = \"file\")")
+                    .AppendIndent()
+                    .Append($"odntrop_del_{tyName}_{odinName} :: #type proc \"c\" (")
+                    .Append(instName).Append(": ").AppendOdnTypeName(targetType);
+                var parms = m.GetParameters();
+                for (int i = 0; i < parms.Length; i++)
+                {
+                    s_StrBld.Append(", ").Append(parms[i].Name).Append(": ").AppendOdnTypeName(parms[i].ParameterType);
+                }
+                s_StrBld.Append(")");
+                if (m.ReturnType != typeof(void))
+                    s_StrBld.Append(" -> ").AppendOdnTypeName(m.ReturnType);
+                s_StrBld.AppendLine().AppendLine();
+
+                // delegate global var
+                s_StrBld.AppendIndent().AppendLine("@(private = \"file\")")
+                    .AppendIndent()
+                    .AppendLine($"odntrop_dydel_{tyName}_{odinName}: odntrop_del_{tyName}_{odinName} = nil")
+                    .AppendLine();
+
+                // delegate setter
+                s_StrBld.AppendIndent().AppendLine("@(export, private = \"file\")")
+                    .AppendIndent()
+                    .AppendLine($"odntrop_export_setter_{tyName}_{odinName} :: proc (value: odntrop_del_{tyName}_{odinName}) {{");
+                s_StrBldIndent++;
+                s_StrBld.AppendIndent().AppendLine($"odntrop_dydel_{tyName}_{odinName} = value");
+                s_StrBldIndent--;
+                s_StrBld.AppendIndent().AppendLine("}").AppendLine();
+
+                // user-facing wrapper
+                s_StrBld.AppendIndent()
+                    .Append($"{odinName}_impl :: proc({instName}: ").AppendOdnTypeName(targetType);
+                for (int i = 0; i < parms.Length; i++)
+                {
+                    var p = parms[i];
+                    s_StrBld.Append(", ").Append(p.Name).Append(": ").AppendOdnTypeName(p.ParameterType);
+                    if (p.HasDefaultValue)
+                    {
+                        if (p.ParameterType == typeof(float)) s_StrBld.Append(" = ").Append(((float)p.DefaultValue).ToString("0.0####").ToLowerInvariant());
+                        else if (p.ParameterType == typeof(int)) s_StrBld.Append(" = ").Append((int)p.DefaultValue);
+                        else if (p.ParameterType == typeof(bool)) s_StrBld.Append(" = ").Append(((bool)p.DefaultValue).ToString().ToLowerInvariant());
+                    }
+                }
+                s_StrBld.Append(")");
+                if (m.ReturnType != typeof(void))
+                    s_StrBld.Append(" -> ").AppendOdnTypeName(m.ReturnType);
+
+                s_StrBld.AppendLine(" {");
+                s_StrBldIndent++;
+                s_StrBld.AppendIndent().AppendLine("odntrop_internal_tempCtx := G_OdnTrop_Internal_Ctx")
+                    .AppendIndent().AppendLine("G_OdnTrop_Internal_Ctx = context")
+                    .AppendIndent().AppendLine("defer G_OdnTrop_Internal_Ctx = odntrop_internal_tempCtx");
+
+                if (m.ReturnType != typeof(void))
+                {
+                    s_StrBld.AppendIndent().Append("odntrop_internal_RetValXXX: ").AppendOdnTypeName(m.ReturnType).AppendLine();
+                }
+
+                s_StrBld.AppendIndent().AppendLine($"if odntrop_dydel_{tyName}_{odinName} != nil {{");
+                s_StrBldIndent++;
+                s_StrBld.AppendIndent();
+                if (m.ReturnType != typeof(void))
+                    s_StrBld.Append("odntrop_internal_RetValXXX = ");
+                s_StrBld.Append($"odntrop_dydel_{tyName}_{odinName}({instName}");
+                for (int i = 0; i < parms.Length; i++)
+                    s_StrBld.Append(", ").Append(parms[i].Name);
+                s_StrBld.AppendLine(")");
+                s_StrBldIndent--;
+                s_StrBld.AppendIndent().AppendLine("}");
+
+                if (m.ReturnType != typeof(void))
+                    s_StrBld.AppendIndent().AppendLine("return odntrop_internal_RetValXXX");
+
+                s_StrBldIndent--;
+                s_StrBld.AppendIndent().AppendLine("}").AppendLine();
+            }
+
+            if (!string.IsNullOrWhiteSpace(odinSrcAppend))
+                s_StrBld.AppendLine(odinSrcAppend);
+
+            s_ImplBld.Append(s_StrBld.ToString());
+
+            // ── decl file: #force_inline forwarding wrappers ──
+            {
+                var declFile = Path.GetFullPath(Path.Combine(ODIN_INTEROP_EXPORTS_DIR, $"{fileName}.odin"));
+                s_StrBld.Clear()
+                    .AppendLine("// THIS IS A GENERATED FILE - DO NOT MODIFY OR YOUR CHANGES WILL BE LOST!")
+                    .AppendLine("#+vet !tabs !unused !style")
+                    .AppendLine("package exports")
+                    .AppendLine()
+                    .AppendLine("@require import \"base:runtime\"")
+                    .AppendLine();
+
+                // No source links for ExportAll — the methods come from the target type, not the stub file.
+
+                foreach (var m in allMethods)
+                {
+                    var odinName = odinNames[m];
+
+                    var parms2 = m.GetParameters();
+                    s_StrBld.AppendIndent().Append($"{odinName} :: #force_inline proc({instName}: ").AppendOdnTypeName(targetType);
+                    for (int i = 0; i < parms2.Length; i++)
+                        s_StrBld.Append(", ").Append(parms2[i].Name).Append(": ").AppendOdnTypeName(parms2[i].ParameterType);
+                    s_StrBld.Append(")");
+                    if (m.ReturnType != typeof(void)) s_StrBld.Append(" -> ").AppendOdnTypeName(m.ReturnType);
+                    s_StrBld.AppendLine(" {");
+                    s_StrBldIndent++;
+                    s_StrBld.AppendIndent();
+                    if (m.ReturnType != typeof(void)) s_StrBld.Append("return ");
+                    s_StrBld.Append($"{odinName}_impl({instName}");
+                    for (int i = 0; i < parms2.Length; i++)
+                        s_StrBld.Append(", ").Append(parms2[i].Name);
+                    s_StrBld.AppendLine(")");
+                    s_StrBldIndent--;
+                    s_StrBld.AppendIndent().AppendLine("}").AppendLine();
+                }
+
+                // Emit parapoly groups for overloaded methods so users can call
+                // the base name and Odin dispatches to the right overload by type.
+                foreach (var kvp in methodGroups)
+                {
+                    if (kvp.Value.Length <= 1) continue;
+                    var overloadNames = kvp.Value.Select(m => odinNames[m]);
+                    s_StrBld.AppendIndent()
+                        .Append(kvp.Key)
+                        .Append(" :: proc{")
+                        .Append(string.Join(", ", overloadNames))
+                        .AppendLine("}")
+                        .AppendLine();
+                }
+
+                File.WriteAllText(declFile, s_StrBld.ToString());
+            }
+        }
+
         private static HashSet<Type> s_HandledTypes = new HashSet<Type>(256);
         private static readonly MethodInfo s_AlignOfMethod = typeof(UnsafeUtility).GetMethod(nameof(UnsafeUtility.AlignOf), BindingFlags.Public | BindingFlags.Static);
         private static StringBuilder AppendOdnTypeDef(this StringBuilder sb, Type t)
@@ -896,7 +1151,7 @@ namespace OdinInterop.Editor
         {
             var ns = t.Namespace;
             if (string.IsNullOrEmpty(ns))
-                return "global";
+                return t.Name; // global-namespace types get their own file
             return ns.Replace('.', '_');
         }
 
@@ -1091,25 +1346,5 @@ namespace OdinInterop.Editor
             return sb.ToString();
         }
 
-        private static string ToSnakeCase(string pascalCase)
-        {
-            if (string.IsNullOrEmpty(pascalCase)) return pascalCase;
-            var sb = new StringBuilder(pascalCase.Length + 4);
-            for (int i = 0; i < pascalCase.Length; i++)
-            {
-                var c = pascalCase[i];
-                if (char.IsUpper(c))
-                {
-                    if (i > 0 && sb[^1] != '_')
-                        sb.Append('_');
-                    sb.Append(char.ToLowerInvariant(c));
-                }
-                else
-                {
-                    sb.Append(c);
-                }
-            }
-            return sb.ToString();
-        }
     }
 }

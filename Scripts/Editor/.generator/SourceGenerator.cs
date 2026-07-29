@@ -35,14 +35,26 @@ namespace OdinInterop.SourceGenerator
                 var attrs = classSymbol.GetAttributes();
                 var hasExport = attrs.Any(a => a.AttributeClass?.GetFullTypeName() == "OdinInterop.OdinExportAttribute");
                 var hasImport = attrs.Any(a => a.AttributeClass?.GetFullTypeName() == "OdinInterop.OdinImportAttribute");
+                var hasExportAll = attrs.Any(a => a.AttributeClass?.GetFullTypeName() == "OdinInterop.OdinExportAllAttribute");
 
-                if (!hasExport && !hasImport)
+                if (!hasExport && !hasImport && !hasExportAll)
                     continue;
 
-                var mode = hasExport ? InteropMode.Export : InteropMode.Import;
-
                 sb.Clear();
-                GenerateInteropCode(sb, classSymbol, mode);
+
+                if (hasExportAll)
+                {
+                    var exportAllAttr = attrs.First(a => a.AttributeClass?.GetFullTypeName() == "OdinInterop.OdinExportAllAttribute");
+                    var targetTypeSymbol = exportAllAttr.ConstructorArguments.FirstOrDefault().Value as INamedTypeSymbol;
+                    if (targetTypeSymbol != null)
+                        GenerateExportAllCode(sb, classSymbol, targetTypeSymbol);
+                }
+                else
+                {
+                    var mode = hasExport ? InteropMode.Export : InteropMode.Import;
+                    GenerateInteropCode(sb, classSymbol, mode);
+                }
+
                 if (sb.Length != 0)
                 {
                     var fileName = $"{classSymbol.GetFullTypeName()}.g.cs";
@@ -78,7 +90,8 @@ namespace OdinInterop.SourceGenerator
                     .ToList();
 
                 if (classSymbol.IsStatic)
-                    exportedMethods = exportedMethods.Where(m => m.DeclaredAccessibility == Accessibility.Private).ToList();
+                    exportedMethods = exportedMethods.Where(m => m.DeclaredAccessibility == Accessibility.Internal ||
+                                                                  m.DeclaredAccessibility == Accessibility.Public).ToList();
                 else
                     exportedMethods = exportedMethods.Where(m => m.DeclaredAccessibility == Accessibility.Internal ||
                                                                   m.DeclaredAccessibility == Accessibility.Public).ToList();
@@ -667,6 +680,27 @@ namespace OdinInterop.SourceGenerator
                     }
                     sbIndent--;
                     sb.AppendIndent(sbIndent).AppendLine("};");
+
+                    // Emit doc-comment summaries so InteropGenerator can produce // comments in .odin files
+                    var docComments = allMethods
+                        .Select(m => (name: m.Name, summary: GetDocSummary(m)))
+                        .Where(x => x.summary != null)
+                        .ToList();
+                    if (docComments.Count > 0)
+                    {
+                        sb.AppendLine();
+                        sb.AppendIndent(sbIndent).AppendLine(
+                            "internal static readonly System.Collections.Generic.Dictionary<string, string> OdinInteropComments = new() {");
+                        sbIndent++;
+                        foreach (var (name, summary) in docComments)
+                        {
+                            sb.AppendIndent(sbIndent)
+                                .Append("[\"").Append(name).Append("\"] = \"")
+                                .Append(EscapeForCSharp(summary)).AppendLine("\",");
+                        }
+                        sbIndent--;
+                        sb.AppendIndent(sbIndent).AppendLine("};");
+                    }
                 }
             }
 
@@ -681,6 +715,406 @@ namespace OdinInterop.SourceGenerator
                 sbIndent--;
                 sb.AppendLine("}");
             }
+        }
+
+        /// <summary>
+        /// Generates export bindings for ALL public instance methods of targetTypeSymbol.
+        /// The stub class (classSymbol) carries [OdinExportAll(typeof(Target))] and is empty —
+        /// all method info is derived from targetTypeSymbol via Roslyn.
+        ///
+        /// Overloaded methods get a suffix derived from parameter interop type names
+        /// so each overload has a unique Odin name (e.g. Emit, Emit_i32, Emit_Particle).
+        /// Methods from System.Object (ToString, Equals, etc.) and property accessors are skipped.
+        /// </summary>
+        private void GenerateExportAllCode(StringBuilder sb, INamedTypeSymbol classSymbol, INamedTypeSymbol targetTypeSymbol)
+        {
+            var sbIndent = 0;
+            var tyName = classSymbol.GetFullTypeName().Replace('.', '_');
+            var instParamName = $"_{targetTypeSymbol.Name}";
+
+            // Enumerate public instance methods of the target type.
+            // Skip methods with non-Unity-Object custom-marshalled types (no interop mapping exists yet).
+            bool IsInteropSupported(ITypeSymbol ts) =>
+                (ts.GetInteroperabilityType() != InteroperabilityType.CustomMarshalled || ts.IsUnityObject())
+                && !ts.GetFullTypeName().StartsWith("Unity.Collections.Native"); // NativeArray, NativeList, etc.
+
+            var allMethods = targetTypeSymbol.GetMembers()
+                .OfType<IMethodSymbol>()
+                .Where(m => m.MethodKind == MethodKind.Ordinary
+                         && !m.IsStatic
+                         && m.DeclaredAccessibility == Accessibility.Public
+                         && !m.Name.StartsWith("get_")
+                         && !m.Name.StartsWith("set_")
+                         && !m.Name.StartsWith("add_")
+                         && !m.Name.StartsWith("remove_")
+                         && !m.Name.StartsWith("odntrop_")
+                         && m.ContainingType.SpecialType != SpecialType.System_Object
+                         && !m.GetAttributes().Any(a => a.AttributeClass?.Name == "ObsoleteAttribute")
+                         && m.Parameters.All(p => p.RefKind == RefKind.None || p.RefKind == RefKind.In) // skip ref/out params for now
+                         && IsInteropSupported(m.ReturnType)
+                         && m.Parameters.All(p => IsInteropSupported(p.Type)))
+                .ToList();
+
+            // Compute overload-safe Odin names. Methods with unique names keep the name;
+            // overloaded methods get a suffix derived from parameter interop type names.
+            var methodGroups = allMethods.GroupBy(m => m.Name).ToDictionary(g => g.Key, g => g.ToList());
+            var odinNames = new Dictionary<IMethodSymbol, string>(SymbolEqualityComparer.Default);
+            foreach (var kvp in methodGroups)
+            {
+                var name = kvp.Key;
+                var methods = kvp.Value;
+                if (methods.Count == 1)
+                {
+                    odinNames[methods[0]] = $"{targetTypeSymbol.Name}_{name}";
+                }
+                else
+                {
+                    foreach (var m in methods)
+                    {
+                        var suffix = m.Parameters.Length == 0 ? "void" : string.Join("_", m.Parameters.Select(p => p.Name));
+                        odinNames[m] = $"{targetTypeSymbol.Name}_{name}_{suffix}";
+                    }
+                }
+            }
+
+            sb.AppendLine("using OdinInterop;");
+            sb.AppendLine("using System;");
+            sb.AppendLine("using System.Collections.Generic;");
+            sb.AppendLine("using System.Runtime.InteropServices;");
+            sb.AppendLine("#if UNITY_EDITOR");
+            sb.AppendLine("using UnityEditor;");
+            sb.AppendLine("#endif");
+            sb.AppendLine("using UnityEngine;");
+            sb.AppendLine();
+
+            // namespace
+            if (!string.IsNullOrEmpty(classSymbol.ContainingNamespace?.Name) &&
+                classSymbol.ContainingNamespace.Name != "<global namespace>")
+            {
+                sb.AppendLine($"namespace {classSymbol.ContainingNamespace}");
+                sb.AppendLine("{");
+                sbIndent++;
+            }
+
+            sb.AppendIndent(sbIndent).Append("internal ");
+            sb.AppendLine($"static unsafe partial class {classSymbol.Name}");
+            sb.AppendIndent(sbIndent).AppendLine("{");
+            sbIndent++;
+
+            // dll name
+            sb.AppendIndent(sbIndent).AppendLine("private const string k_OdinInteropDllName = ");
+            sbIndent++;
+            sb.AppendLine("#if UNITY_IOS && !UNITY_EDITOR");
+            sb.AppendIndent(sbIndent).AppendLine("\"__Internal\";");
+            sb.AppendLine("#else");
+            sb.AppendIndent(sbIndent).AppendLine("\"OdinInterop\";");
+            sb.AppendLine("#endif");
+            sb.AppendLine();
+            sbIndent--;
+
+            // Helper: append instance parameter
+            void AppendInstanceParam(bool hasMoreParams)
+            {
+                sb.Append("RawObjectHandle ").Append(instParamName);
+                if (hasMoreParams) sb.Append(", ");
+            }
+
+            // generate delegates for all methods
+            var exportedMethods = allMethods; // all are exported
+            foreach (var method in exportedMethods)
+            {
+                var odinName = odinNames[method];
+                sb.AppendIndent(sbIndent).Append("private delegate ");
+                sb.AppendReturnType(method, true);
+                sb.Append($" odntrop_del_{odinName}(");
+                AppendInstanceParam(method.Parameters.Length > 0);
+                sb.AppendParameters(method.Parameters, true);
+                sb.AppendLine(");");
+                sb.AppendLine();
+
+                sb.AppendIndent(sbIndent)
+                    .Append("private delegate void odntrop_del_Set")
+                    .Append(odinName)
+                    .Append("Delegate(odntrop_del_")
+                    .Append(odinName)
+                    .AppendLine(" value);")
+                    .AppendLine();
+            }
+
+            // P/Invoke wrappers for each method
+            foreach (var method in exportedMethods)
+            {
+                var odinName = odinNames[method];
+                sb.AppendIndent(sbIndent)
+                    .Append("[AOT.MonoPInvokeCallback(typeof(odntrop_del_")
+                    .Append(odinName)
+                    .AppendLine("))]")
+                    .AppendIndent(sbIndent)
+                    .Append("private static ")
+                    .AppendReturnType(method, true)
+                    .Append(" odntrop_exported_")
+                    .Append(odinName)
+                    .Append("(");
+                sb.Append("RawObjectHandle ").Append(instParamName);
+                if (method.Parameters.Length > 0) sb.Append(", ");
+                sb.AppendParameters(method.Parameters, true);
+                sb.AppendLine(")");
+                sb.AppendIndent(sbIndent).AppendLine("{");
+                sbIndent++;
+
+                // Instance conversion: RawObjectHandle → target type
+                sb.AppendIndent(sbIndent)
+                    .AppendTypeName(targetTypeSymbol, false)
+                    .Append(" ")
+                    .Append(instParamName)
+                    .Append("_proxy = (")
+                    .AppendTypeName(targetTypeSymbol, false)
+                    .Append(")(OdinInterop.ObjectHandle<")
+                    .AppendTypeName(targetTypeSymbol, false)
+                    .Append(">)")
+                    .Append(instParamName)
+                    .AppendLine(";");
+
+                // Auto-converting parameter proxies
+                foreach (var par in method.Parameters)
+                {
+                    var rk = par.RefKind;
+                    switch (par.Type.GetInteroperabilityType())
+                    {
+                        case InteroperabilityType.AutoConverting:
+                            if (rk == RefKind.Ref)
+                            {
+                                sb.AppendIndent(sbIndent)
+                                    .AppendTypeName(par.Type, false)
+                                    .Append(" ").Append(par.Name)
+                                    .Append("_odntrop_internal_proxy = ")
+                                    .Append(par.Name).AppendLine(";");
+                            }
+                            break;
+                        case InteroperabilityType.CustomMarshalled:
+                            if (par.Type.IsUnityObject())
+                            {
+                                if (rk == RefKind.None || rk == RefKind.Ref || rk == RefKind.In)
+                                {
+                                    sb.AppendIndent(sbIndent)
+                                        .AppendTypeName(par.Type, false)
+                                        .Append(" ").Append(par.Name)
+                                        .Append("_odntrop_internal_proxy = (")
+                                        .AppendTypeName(par.Type, false)
+                                        .Append(")(OdinInterop.ObjectHandle<")
+                                        .AppendTypeName(par.Type, false)
+                                        .Append(">)").Append(par.Name).AppendLine(";");
+                                }
+                            }
+                            break;
+                    }
+                }
+
+                // Call the target method
+                sb.AppendIndent(sbIndent);
+                if (!method.ReturnsVoid)
+                {
+                    if (method.ReturnsByRef)
+                        sb.Append("ref ");
+                    else if (method.ReturnsByRefReadonly)
+                        sb.Append("ref readonly ");
+                    sb.Append("var odntrop_internal_RetValXXX = ");
+                    if (method.ReturnsByRef)
+                        sb.Append("ref ");
+                    else if (method.ReturnsByRefReadonly)
+                        sb.Append("ref readonly ");
+                }
+                sb.Append(instParamName).Append("_proxy.").Append(method.Name).Append("(");
+                sb.AppendParameters(method.Parameters, null);
+                sb.AppendLine(");");
+
+                // Copy-back for ref/out params
+                foreach (var par in method.Parameters)
+                {
+                    var rk = par.RefKind;
+                    switch (par.Type.GetInteroperabilityType())
+                    {
+                        case InteroperabilityType.AutoConverting:
+                            if (rk == RefKind.Out || rk == RefKind.Ref)
+                            {
+                                sb.AppendIndent(sbIndent)
+                                    .Append(par.Name).Append(" = ")
+                                    .Append(par.Name).AppendLine("_odntrop_internal_proxy;");
+                            }
+                            break;
+                        case InteroperabilityType.CustomMarshalled:
+                            if (par.Type.IsUnityObject() && (rk == RefKind.Ref || rk == RefKind.Out))
+                            {
+                                sb.AppendIndent(sbIndent)
+                                    .Append(par.Name)
+                                    .Append(" = (OdinInterop.RawObjectHandle)(OdinInterop.ObjectHandle<")
+                                    .AppendTypeName(par.Type, false)
+                                    .Append(">)").Append(par.Name)
+                                    .AppendLine("_odntrop_internal_proxy;");
+                            }
+                            break;
+                    }
+                }
+
+                // Return statement
+                if (!method.ReturnsVoid)
+                {
+                    sb.AppendIndent(sbIndent);
+                    sb.Append("return ");
+                    if (method.ReturnsByRef)
+                        sb.Append("ref ");
+                    else if (method.ReturnsByRefReadonly)
+                        sb.Append("ref readonly ");
+                    sb.AppendLine("odntrop_internal_RetValXXX;");
+                }
+
+                sbIndent--;
+                sb.AppendIndent(sbIndent).AppendLine("}");
+                sb.AppendLine();
+            }
+
+            // Editor hot-reload + runtime init
+            sb.AppendLine("#if UNITY_EDITOR || ODININTEROP_RUNTIME_RELOADING");
+            sb.AppendLine();
+
+            sb.AppendLine("#if UNITY_EDITOR");
+            sb.AppendIndent(sbIndent).AppendLine("[InitializeOnLoadMethod]");
+            sb.AppendLine("#else");
+            sb.AppendIndent(sbIndent).AppendLine("[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]");
+            sb.AppendLine("#endif");
+            sb.AppendIndent(sbIndent).AppendLine("private static void odntrop_EditorInit()");
+            sb.AppendIndent(sbIndent).AppendLine("{");
+            sbIndent++;
+            sb.AppendIndent(sbIndent).AppendLine("OdinCompilerUtils.onHotReload += odntrop_OnHotReload;");
+            sb.AppendIndent(sbIndent).AppendLine("if (OdinCompilerUtils.initialisedAfterDomainReload) odntrop_OnHotReload(OdinCompilerUtils.libraryHandle);");
+            sbIndent--;
+            sb.AppendIndent(sbIndent).AppendLine("}").AppendLine();
+
+            sb.AppendIndent(sbIndent).AppendLine("private static void odntrop_OnHotReload(IntPtr libraryHandle)");
+            sb.AppendIndent(sbIndent).AppendLine("{");
+            sbIndent++;
+            sb.AppendIndent(sbIndent).AppendLine("if (libraryHandle == IntPtr.Zero) return;");
+            sb.AppendLine();
+
+            foreach (var method in exportedMethods)
+            {
+                var odinName = odinNames[method];
+                sb.AppendIndent(sbIndent)
+                    .Append("LibraryUtils.GetDelegate<odntrop_del_Set")
+                    .Append(odinName)
+                    .Append("Delegate>(libraryHandle, \"odntrop_export_setter_")
+                    .Append(tyName)
+                    .Append("_")
+                    .Append(odinName)
+                    .Append("\")?.Invoke(odntrop_exported_")
+                    .Append(odinName)
+                    .AppendLine(");");
+            }
+
+            sbIndent--;
+            sb.AppendIndent(sbIndent).AppendLine("}");
+            sb.AppendLine();
+
+            // Runtime bindings
+            sb.AppendLine("#elif !ODININTEROP_DISABLED");
+            sb.AppendLine();
+
+            foreach (var method in exportedMethods)
+            {
+                var odinName = odinNames[method];
+                sb.AppendIndent(sbIndent)
+                    .Append("[DllImport(k_OdinInteropDllName, CallingConvention = CallingConvention.Cdecl, EntryPoint = \"odntrop_export_setter_")
+                    .Append(tyName)
+                    .Append("_")
+                    .Append(odinName)
+                    .AppendLine("\")]")
+                    .AppendIndent(sbIndent)
+                    .Append("private static extern void odntrop_set_")
+                    .Append(odinName)
+                    .Append("(odntrop_del_")
+                    .Append(odinName)
+                    .AppendLine(" value);");
+                sb.AppendLine();
+            }
+
+            sb.AppendIndent(sbIndent).AppendLine("[RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]");
+            sb.AppendIndent(sbIndent).AppendLine("private static void odntrop_RuntimeInit()");
+            sb.AppendIndent(sbIndent).AppendLine("{");
+            sbIndent++;
+            foreach (var method in exportedMethods)
+            {
+                var odinName = odinNames[method];
+                sb.AppendIndent(sbIndent)
+                    .Append("odntrop_set_").Append(odinName)
+                    .Append("(odntrop_exported_").Append(odinName).AppendLine(");");
+            }
+            sbIndent--;
+            sb.AppendIndent(sbIndent).AppendLine("}");
+            sb.AppendLine();
+
+            sb.AppendLine("#endif");
+            sb.AppendLine();
+
+            // Interop manifest
+            {
+                var sourceFilePath = classSymbol.Locations.FirstOrDefault()?.SourceTree?.FilePath?.Replace('\\', '/') ?? "";
+                sb.AppendLine();
+                sb.AppendIndent(sbIndent).Append("internal const string OdinInteropSourcePath = \"")
+                    .Append(sourceFilePath).AppendLine("\";");
+
+                if (exportedMethods.Count > 0)
+                {
+                    sb.AppendLine();
+                    sb.AppendIndent(sbIndent).AppendLine(
+                        "internal static readonly System.Collections.Generic.Dictionary<string, int> OdinInteropMethodLines = new() {");
+                    sbIndent++;
+                    foreach (var method in exportedMethods)
+                    {
+                        var loc = method.Locations.FirstOrDefault();
+                        var line = loc?.GetLineSpan().StartLinePosition.Line + 1 ?? 0;
+                        sb.AppendIndent(sbIndent)
+                            .Append("[\"").Append(odinNames[method]).Append("\"] = ").Append(line).AppendLine(",");
+                    }
+                    sbIndent--;
+                    sb.AppendIndent(sbIndent).AppendLine("};");
+                }
+            }
+
+            // close class
+            sbIndent--;
+            sb.AppendIndent(sbIndent).AppendLine("}");
+
+            // close namespace
+            if (!string.IsNullOrEmpty(classSymbol.ContainingNamespace?.Name) &&
+                classSymbol.ContainingNamespace.Name != "<global namespace>")
+            {
+                sbIndent--;
+                sb.AppendLine("}");
+            }
+        }
+
+        /// <summary>Extracts the &lt;summary&gt; text from a method's XML doc comment, or null if none.</summary>
+        private static string GetDocSummary(IMethodSymbol method)
+        {
+            var syntaxRef = method.DeclaringSyntaxReferences.FirstOrDefault();
+            if (syntaxRef == null) return null;
+            var node = syntaxRef.GetSyntax();
+            var trivia = node.GetLeadingTrivia()
+                .FirstOrDefault(t => t.IsKind(SyntaxKind.SingleLineDocumentationCommentTrivia));
+            if (trivia == default) return null;
+            var xml = trivia.ToFullString();
+            var start = xml.IndexOf("<summary>", StringComparison.Ordinal);
+            if (start < 0) return null;
+            start += "<summary>".Length;
+            var end = xml.IndexOf("</summary>", start, StringComparison.Ordinal);
+            if (end < 0) return null;
+            return xml.Substring(start, end - start).Trim();
+        }
+
+        /// <summary>Escapes a string for safe inclusion in a C# string literal.</summary>
+        private static string EscapeForCSharp(string s)
+        {
+            return s.Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\n", "\\n").Replace("\r", "");
         }
 
         private sealed class Receiver : ISyntaxReceiver
