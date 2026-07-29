@@ -4,4 +4,3 @@ Source/.exports
 Source/.imports
 Generated/*
 Scripts/Runtime/Generated/*
-Scripts/Runtime/Export/.gen-debug

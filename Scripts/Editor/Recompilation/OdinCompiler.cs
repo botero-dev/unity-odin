@@ -1,4 +1,5 @@
 using System.IO;
+using System.Diagnostics;
 using UnityEngine;
 using UnityEditor;
 using UnityEditor.Android;
@@ -8,6 +9,8 @@ using System;
 using System.Text;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+
+using Debug = UnityEngine.Debug;
 
 namespace OdinInterop.Editor
 {
@@ -173,6 +176,8 @@ namespace OdinInterop.Editor
         [MenuItem("Tools/Odin Interop/Hot Reload %&R")]
         public static unsafe void HotReload()
         {
+            var swTotal = Stopwatch.StartNew();
+
             if (OdinCompilerUtils.libraryHandle != IntPtr.Zero)
             {
                 LibraryUtils.CloseLibrary(OdinCompilerUtils.libraryHandle);
@@ -186,6 +191,7 @@ namespace OdinInterop.Editor
                 return;
             }
 
+            var swLoad = Stopwatch.StartNew();
             var libraryHandle = LibraryUtils.OpenLibrary(libPath);
             StoredState.value.libHandle = libraryHandle;
             if (libraryHandle == IntPtr.Zero)
@@ -196,6 +202,11 @@ namespace OdinInterop.Editor
 
             LibraryUtils.GetDelegate<SetUnityInterfacesPtrDelegate>(libraryHandle, "UnityOdnTropInternalInitialiseForEditor")?.Invoke(StoredState.GetPtr());
             OdinCompilerUtils.RaiseHotReloadEvt(libraryHandle);
+
+            swLoad.Stop();
+            swTotal.Stop();
+            Debug.Log($"[OdinCompiler] Library load + init completed in {swLoad.ElapsedMilliseconds}ms");
+            Debug.Log($"[OdinCompiler] Hot Reload total time: {swTotal.ElapsedMilliseconds}ms");
         }
 
         private unsafe delegate void SetUnityInterfacesPtrDelegate(RawStoredState* ptr);
@@ -810,6 +821,8 @@ namespace OdinInterop.Editor
 
         private static bool RunOdinCompiler(List<string> args, Dictionary<string, string> extraEnv = null, bool isRelease = false)
         {
+            var sw = Stopwatch.StartNew();
+
             args.Insert(0, "build");
             args.Insert(1, ".imports");
 
@@ -822,7 +835,7 @@ namespace OdinInterop.Editor
                 args.Add("-debug");
             }
 
-            return RunProcess(
+            var result = RunProcess(
                 "OdinCompiler",
 #if UNITY_EDITOR_WIN || UNITY_EDITOR_LINUX
                 "odin",
@@ -832,6 +845,10 @@ namespace OdinInterop.Editor
                 "unknown",
 #endif
                 args, null, ODIN_LIB_INPUT_PATH, extraEnv);
+
+            sw.Stop();
+            Debug.Log($"[OdinCompiler] Compilation completed in {sw.ElapsedMilliseconds}ms ({(result ? "success" : "FAILED")})");
+            return result;
         }
 
         private static bool RunTarballDecompressionProcess(string sn, string tarball, string extractPath)
@@ -877,6 +894,8 @@ namespace OdinInterop.Editor
 
         private static bool RunProcessInternal(string sn, string tgt, List<string> args, string argsManual, string wd, Dictionary<string, string> extraEnv)
         {
+            var sw = Stopwatch.StartNew();
+
             var psi = new System.Diagnostics.ProcessStartInfo(tgt);
             psi.WorkingDirectory = wd;
 
@@ -917,6 +936,9 @@ namespace OdinInterop.Editor
             var s = sb.ToString();
             if (!string.IsNullOrWhiteSpace(s))
                 Debug.LogFormat(success ? LogType.Log : LogType.Error, LogOption.NoStacktrace, null, "[{0}]: {1}", sn, s);
+
+            sw.Stop();
+            Debug.Log($"[{sn}] Process {tgt} completed in {sw.ElapsedMilliseconds}ms (exit code {(success ? 0 : process.ExitCode)})");
 
             return success;
         }

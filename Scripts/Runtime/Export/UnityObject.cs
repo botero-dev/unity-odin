@@ -12,4 +12,7 @@ namespace OdinExports
     [OdinInterop.OdinExportAll(typeof(UnityEngine.GameObject))]
     internal static unsafe partial class GameObject {}
 
+    [OdinInterop.OdinExportAll(typeof(UnityEngine.Texture))]
+    internal static unsafe partial class Texture {}
+
 }

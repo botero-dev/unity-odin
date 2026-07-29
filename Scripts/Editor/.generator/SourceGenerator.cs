@@ -4,6 +4,7 @@ using Microsoft.CodeAnalysis.CSharp.Syntax;
 using Microsoft.CodeAnalysis.Text;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Text;
@@ -21,6 +22,9 @@ namespace OdinInterop.SourceGenerator
         public void Execute(GeneratorExecutionContext ctx)
         {
             if (!(ctx.SyntaxReceiver is Receiver rx)) return;
+
+            var swTotal = Stopwatch.StartNew();
+            var generatedCount = 0;
 
             var compilation = ctx.Compilation;
 
@@ -83,6 +87,7 @@ namespace OdinInterop.SourceGenerator
                 if (sb.Length != 0)
                 {
                     ctx.AddSource(fileName, SourceText.From(sb.ToString(), Encoding.UTF8));
+                    generatedCount++;
                 }
                 }
                 catch (Exception ex)
@@ -94,6 +99,13 @@ namespace OdinInterop.SourceGenerator
                         classDeclaration.GetLocation()));
                 }
             }
+
+            swTotal.Stop();
+            ctx.ReportDiagnostic(Diagnostic.Create(
+                new DiagnosticDescriptor("ODIN002", "OdinInterop Source Generator",
+                    $"Generated {generatedCount} interop file(s) in {swTotal.ElapsedMilliseconds}ms",
+                    "OdinInterop", DiagnosticSeverity.Info, true),
+                null));
         }
 
         private enum InteropMode

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using UnityEditor;
 using UnityEngine;
 using System.IO;
@@ -8,6 +9,8 @@ using System.Reflection;
 using System.Linq;
 using UnityEditorInternal;
 using Unity.Collections.LowLevel.Unsafe;
+
+using Debug = UnityEngine.Debug;
 
 namespace OdinInterop.Editor
 {
@@ -35,6 +38,8 @@ namespace OdinInterop.Editor
 
         internal static void GenerateInteropCode()
         {
+            var sw = Stopwatch.StartNew();
+
             s_ExportedTypesFlat.Clear();
             s_ExportedTypesByNamespace.Clear();
             s_HandledTypes.Clear();
@@ -68,7 +73,7 @@ namespace OdinInterop.Editor
                 var p = Path.GetFullPath(Path.Combine(Application.dataPath, "UnityOdin", "Scripts", "Editor", "Generator", ".embedded"));
                 foreach (var f in Directory.GetFiles(p, "*.odin", SearchOption.TopDirectoryOnly))
                 {
-                    var tgtFileName = Path.GetFileName(f);
+                    var tgtFileName = "interop_" + Path.GetFileName(f);
 
                     var tgtDir = ODIN_INTEROP_EXPORTS_DIR;
                     var tgtFile = Path.GetFullPath(Path.Combine(tgtDir, tgtFileName));
@@ -321,6 +326,9 @@ namespace OdinInterop.Editor
                     .AppendLine();
                 File.WriteAllText(implFile, implHeader.ToString() + s_ImplBld.ToString());
             }
+
+            sw.Stop();
+            Debug.Log($"[OdinInterop] Code generation completed in {sw.ElapsedMilliseconds}ms");
         }
 
         private static StringBuilder s_StrBld = new StringBuilder(16384);
