@@ -1100,7 +1100,7 @@ namespace OdinInterop.Editor
             static bool IsInteropSupported(Type ts)
             {
                 if (ts.IsGenericParameter) return false; // skip generic type params like T
-                if (ts.IsByRefLike) return false; // skip ref structs like Span<T>, ReadOnlySpan<T>
+                if (ts.IsByRefLike && !ts.Name.StartsWith("Span") && !ts.Name.StartsWith("ReadOnlySpan")) return false; // skip ref structs except Span/ReadOnlySpan
                 if (ts.IsPrimitive || ts == typeof(void) || ts == typeof(string)) return true;
                 if (ts.IsEnum) return true;
                 if (ts.IsPointer) return IsInteropSupported(ts.GetElementType());
@@ -1109,7 +1109,7 @@ namespace OdinInterop.Editor
                  || ts == typeof(Quaternion) || ts == typeof(Color) || ts == typeof(Color32)
                  || ts == typeof(LayerMask)) return true;
                 if (ts.Namespace != null && ts.Namespace.StartsWith("Unity.Collections")) return false; // NativeArray etc.
-                if (UnsafeUtility.IsUnmanaged(ts) && ts.IsValueType) return true;
+                if (UnsafeUtility.IsUnmanaged(ts) && ts.IsValueType && !ts.IsByRefLike) return true;
                 if (ts.IsGenericType)
                 {
                     var gd = ts.GetGenericTypeDefinition();
@@ -1676,6 +1676,10 @@ namespace OdinInterop.Editor
                 sb.Append("[]").AppendOdnTypeName(t.GetElementType());
             }
             else if (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(Slice<>))
+            {
+                sb.Append("[]").AppendOdnTypeName(t.GetGenericArguments()[0]);
+            }
+            else if (t.IsGenericType && (t.GetGenericTypeDefinition() == typeof(Span<>) || t.GetGenericTypeDefinition() == typeof(ReadOnlySpan<>)))
             {
                 sb.Append("[]").AppendOdnTypeName(t.GetGenericArguments()[0]);
             }

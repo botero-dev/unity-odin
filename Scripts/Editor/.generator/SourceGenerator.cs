@@ -955,6 +955,24 @@ namespace OdinInterop.SourceGenerator
                                     .Append("_odntrop_internal_proxy = ")
                                     .Append(par.Name).AppendLine(";");
                             }
+                            else if (rk == RefKind.None || rk == RefKind.In)
+                            {
+                                // Span<T>/ReadOnlySpan<T> → Slice<T> proxy
+                                var fullName = ((INamedTypeSymbol)par.Type).OriginalDefinition.ToString();
+                                if (fullName == "System.Span<T>" || fullName == "System.ReadOnlySpan<T>")
+                                {
+                                    var isReadOnly = fullName == "System.ReadOnlySpan<T>";
+                                    var spanType = isReadOnly ? "ReadOnlySpan<" : "Span<";
+                                    sb.AppendIndent(sbIndent)
+                                        .Append(spanType)
+                                        .AppendTypeName(((INamedTypeSymbol)par.Type).TypeArguments[0], false)
+                                        .Append("> ").Append(par.Name)
+                                        .Append("_odntrop_internal_proxy = new ").Append(spanType)
+                                        .AppendTypeName(((INamedTypeSymbol)par.Type).TypeArguments[0], false)
+                                        .Append(">(").Append(par.Name).Append(".ptr, (int)")
+                                        .Append(par.Name).AppendLine(".len);");
+                                }
+                            }
                             break;
                         case InteroperabilityType.CustomMarshalled:
                             if (par.Type.IsUnityObject())
@@ -1306,7 +1324,10 @@ namespace OdinInterop.SourceGenerator
                 switch (par.RefKind)
                 {
                     case RefKind.None:
-                        varIsProxy = varIsProxy && (interoperability != InteroperabilityType.AutoConverting);
+                        // Span/ReadOnlySpan need proxy even by-val (Slice<T> → Span<T>)
+                        varIsProxy = varIsProxy && (interoperability != InteroperabilityType.AutoConverting
+                            || ((INamedTypeSymbol)par.Type).OriginalDefinition.ToString() == "System.Span<T>"
+                            || ((INamedTypeSymbol)par.Type).OriginalDefinition.ToString() == "System.ReadOnlySpan<T>");
                         break;
                     case RefKind.Ref:
                         sb.Append("ref ");
@@ -1396,7 +1417,9 @@ namespace OdinInterop.SourceGenerator
                 var odStr = nt.OriginalDefinition.ToString();
                 if (odStr == "OdinInterop.DynamicArray<T>" ||
                     odStr == "OdinInterop.Slice<T>" ||
-                    odStr == "OdinInterop.ObjectHandle<T>")
+                    odStr == "OdinInterop.ObjectHandle<T>" ||
+                    odStr == "System.Span<T>" ||
+                    odStr == "System.ReadOnlySpan<T>")
                 {
                     result = InteroperabilityType.AutoConverting;
                     goto foundResult;
@@ -1493,6 +1516,22 @@ namespace OdinInterop.SourceGenerator
                         sb.Append(">");
                         return sb;
                     }
+                }
+                else if (odStr == "System.Span<T>" || odStr == "System.ReadOnlySpan<T>")
+                {
+                    if (useInteroperableVersion)
+                    {
+                        sb.Append("Slice<");
+                        sb.AppendTypeName(nt.TypeArguments[0], false);
+                        sb.Append(">");
+                    }
+                    else
+                    {
+                        sb.Append(odStr == "System.Span<T>" ? "Span<" : "ReadOnlySpan<");
+                        sb.AppendTypeName(nt.TypeArguments[0], false);
+                        sb.Append(">");
+                    }
+                    return sb;
                 }
             }
 
